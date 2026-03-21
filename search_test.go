@@ -173,6 +173,56 @@ func TestFormatGroundedResponseNoText(t *testing.T) {
 	}
 }
 
+func TestFormatGroundedResponseOrdersAndDeduplicatesCitations(t *testing.T) {
+	t.Parallel()
+
+	resp := &genai.GenerateContentResponse{
+		Candidates: []*genai.Candidate{
+			{
+				Content: &genai.Content{
+					Parts: []*genai.Part{
+						{Text: "Alpha "},
+						{Text: "Beta"},
+					},
+				},
+				GroundingMetadata: &genai.GroundingMetadata{
+					GroundingChunks: []*genai.GroundingChunk{
+						{Web: &genai.GroundingChunkWeb{Title: "One", URI: "https://one.example"}},
+						{Web: &genai.GroundingChunkWeb{Title: "Two", URI: "https://two.example"}},
+					},
+					GroundingSupports: []*genai.GroundingSupport{
+						{
+							Segment:               &genai.Segment{PartIndex: 1, EndIndex: 4},
+							GroundingChunkIndices: []int32{1, 0, 1},
+						},
+						{
+							Segment:               &genai.Segment{PartIndex: 0, EndIndex: 6},
+							GroundingChunkIndices: []int32{0},
+						},
+						{
+							Segment:               &genai.Segment{PartIndex: 1, EndIndex: 4},
+							GroundingChunkIndices: []int32{0},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	gotText, gotSources, err := formatGroundedResponse(resp)
+	if err != nil {
+		t.Fatalf("formatGroundedResponse() error = %v", err)
+	}
+
+	wantText := "Alpha [1]Beta[1,2]\n\nSources:\n[1] One (https://one.example)\n[2] Two (https://two.example)"
+	if gotText != wantText {
+		t.Fatalf("formatGroundedResponse() text = %q, want %q", gotText, wantText)
+	}
+	if len(gotSources) != 2 {
+		t.Fatalf("formatGroundedResponse() sources len = %d, want 2", len(gotSources))
+	}
+}
+
 func TestGroundingSource(t *testing.T) {
 	t.Parallel()
 

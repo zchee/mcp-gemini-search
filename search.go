@@ -17,8 +17,8 @@ package main
 import (
 	"context"
 	"fmt"
-	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
 	"google.golang.org/genai"
@@ -31,6 +31,11 @@ type contentGenerator interface {
 type googleSearchService struct {
 	model     string
 	generator contentGenerator
+}
+
+type citationInsertion struct {
+	offset int
+	number int
 }
 
 func (s *googleSearchService) Search(ctx context.Context, query string) (googleSearchOutput, error) {
@@ -97,28 +102,30 @@ func formatGroundedResponse(resp *genai.GenerateContentResponse) (string, []goog
 
 	formatted := text
 	if candidate.Content != nil && len(candidate.Content.Parts) > 0 && len(metadata.GroundingSupports) > 0 && len(sources) > 0 {
-		partOffsets := make(map[int]int, len(candidate.Content.Parts))
+		partOffsets := make([]int, len(candidate.Content.Parts))
+		partHasText := make([]bool, len(candidate.Content.Parts))
 		totalLength := 0
 		for idx, part := range candidate.Content.Parts {
 			if part == nil || part.Thought || part.Text == "" {
 				continue
 			}
+			partHasText[idx] = true
 			partOffsets[idx] = totalLength
 			totalLength += len(part.Text)
 		}
 
-		insertions := make(map[int][]int)
+		insertions := make([]citationInsertion, 0, len(metadata.GroundingSupports))
 		for _, support := range metadata.GroundingSupports {
 			if support == nil || support.Segment == nil || len(support.GroundingChunkIndices) == 0 {
 				continue
 			}
 
 			partIndex := int(support.Segment.PartIndex)
-			baseOffset, ok := partOffsets[partIndex]
-			if !ok {
+			if partIndex < 0 || partIndex >= len(partOffsets) || !partHasText[partIndex] {
 				continue
 			}
 
+			baseOffset := partOffsets[partIndex]
 			partText := candidate.Content.Parts[partIndex].Text
 			endIndex := int(support.Segment.EndIndex)
 			if endIndex < 0 || endIndex > len(partText) {
@@ -131,26 +138,51 @@ func formatGroundedResponse(resp *genai.GenerateContentResponse) (string, []goog
 				if number <= 0 {
 					continue
 				}
-				insertions[globalOffset] = append(insertions[globalOffset], number)
+				insertions = append(insertions, citationInsertion{
+					offset: globalOffset,
+					number: number,
+				})
 			}
 		}
 
 		if len(insertions) > 0 {
-			offsets := make([]int, 0, len(insertions))
-			for offset := range insertions {
-				offsets = append(offsets, offset)
-			}
-			sort.Sort(sort.Reverse(sort.IntSlice(offsets)))
+			sort.Slice(insertions, func(i, j int) bool {
+				if insertions[i].offset == insertions[j].offset {
+					return insertions[i].number < insertions[j].number
+				}
+				return insertions[i].offset < insertions[j].offset
+			})
 
-			for _, offset := range offsets {
-				numbers := insertions[offset]
-				slices.Sort(numbers)
-				numbers = slices.Compact(numbers)
-				if len(numbers) == 0 {
+			var builder strings.Builder
+			builder.Grow(len(text) + len(insertions)*4)
+			lastOffset := 0
+			numbers := make([]int, 0, 4)
+
+			for i := 0; i < len(insertions); {
+				offset := insertions[i].offset
+				if offset < lastOffset || offset > len(text) {
+					i++
 					continue
 				}
-				formatted = formatted[:offset] + citationText(numbers) + formatted[offset:]
+
+				builder.WriteString(text[lastOffset:offset])
+				numbers = numbers[:0]
+
+				j := i
+				for ; j < len(insertions) && insertions[j].offset == offset; j++ {
+					number := insertions[j].number
+					if len(numbers) > 0 && numbers[len(numbers)-1] == number {
+						continue
+					}
+					numbers = append(numbers, number)
+				}
+				builder.WriteString(citationText(numbers))
+				lastOffset = offset
+				i = j
 			}
+
+			builder.WriteString(text[lastOffset:])
+			formatted = builder.String()
 		}
 	}
 
@@ -158,22 +190,42 @@ func formatGroundedResponse(resp *genai.GenerateContentResponse) (string, []goog
 		return formatted, nil, nil
 	}
 
-	var sourceLines []string
+	var builder strings.Builder
+	builder.Grow(len(formatted) + len(sources)*32 + len("\n\nSources:\n"))
+	builder.WriteString(formatted)
+	builder.WriteString("\n\nSources:\n")
+	wroteSource := false
 	for _, source := range sources {
+		if wroteSource {
+			builder.WriteByte('\n')
+		}
 		switch {
 		case source.Title != "" && source.URI != "":
-			sourceLines = append(sourceLines, fmt.Sprintf("[%d] %s (%s)", source.Index, source.Title, source.URI))
+			builder.WriteByte('[')
+			builder.WriteString(strconv.Itoa(source.Index))
+			builder.WriteString("] ")
+			builder.WriteString(source.Title)
+			builder.WriteString(" (")
+			builder.WriteString(source.URI)
+			builder.WriteByte(')')
 		case source.Title != "":
-			sourceLines = append(sourceLines, fmt.Sprintf("[%d] %s", source.Index, source.Title))
+			builder.WriteByte('[')
+			builder.WriteString(strconv.Itoa(source.Index))
+			builder.WriteString("] ")
+			builder.WriteString(source.Title)
 		case source.URI != "":
-			sourceLines = append(sourceLines, fmt.Sprintf("[%d] %s", source.Index, source.URI))
+			builder.WriteByte('[')
+			builder.WriteString(strconv.Itoa(source.Index))
+			builder.WriteString("] ")
+			builder.WriteString(source.URI)
 		}
+		wroteSource = true
 	}
-	if len(sourceLines) == 0 {
+	if !wroteSource {
 		return formatted, sources, nil
 	}
 
-	return formatted + "\n\nSources:\n" + strings.Join(sourceLines, "\n"), sources, nil
+	return builder.String(), sources, nil
 }
 
 func groundingSource(chunk *genai.GroundingChunk) (string, string) {
@@ -195,9 +247,19 @@ func groundingSource(chunk *genai.GroundingChunk) (string, string) {
 }
 
 func citationText(numbers []int) string {
-	var parts []string
-	for _, number := range numbers {
-		parts = append(parts, fmt.Sprintf("%d", number))
+	if len(numbers) == 0 {
+		return "[]"
 	}
-	return "[" + strings.Join(parts, ",") + "]"
+
+	var builder strings.Builder
+	builder.Grow(len(numbers)*4 + 2)
+	builder.WriteByte('[')
+	for idx, number := range numbers {
+		if idx > 0 {
+			builder.WriteByte(',')
+		}
+		builder.WriteString(strconv.Itoa(number))
+	}
+	builder.WriteByte(']')
+	return builder.String()
 }
