@@ -176,7 +176,7 @@ func formatGroundedResponse(resp *genai.GenerateContentResponse) (string, []goog
 					}
 					numbers = append(numbers, number)
 				}
-				builder.WriteString(citationText(numbers))
+				writeCitationText(&builder, numbers)
 				lastOffset = offset
 				i = j
 			}
@@ -253,13 +253,18 @@ func citationText(numbers []int) string {
 
 	var builder strings.Builder
 	builder.Grow(len(numbers)*4 + 2)
+	writeCitationText(&builder, numbers)
+	return builder.String()
+}
+
+func writeCitationText(builder *strings.Builder, numbers []int) {
 	builder.WriteByte('[')
 	for idx, number := range numbers {
 		if idx > 0 {
 			builder.WriteByte(',')
 		}
-		builder.WriteString(strconv.Itoa(number))
+		var buf [20]byte
+		builder.Write(strconv.AppendInt(buf[:0], int64(number), 10))
 	}
 	builder.WriteByte(']')
-	return builder.String()
 }

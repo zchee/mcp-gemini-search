@@ -17,6 +17,7 @@ package main
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"google.golang.org/genai"
@@ -241,7 +242,70 @@ func TestGroundingSource(t *testing.T) {
 func TestCitationText(t *testing.T) {
 	t.Parallel()
 
-	if got := citationText([]int{1, 2, 3}); got != "[1,2,3]" {
-		t.Fatalf("citationText() = %q, want %q", got, "[1,2,3]")
+	tests := map[string]struct {
+		numbers []int
+		want    string
+	}{
+		"success: empty citations": {
+			numbers: nil,
+			want:    "[]",
+		},
+		"success: multiple citations": {
+			numbers: []int{1, 2, 3},
+			want:    "[1,2,3]",
+		},
+		"success: large citation number": {
+			numbers: []int{1, 12345},
+			want:    "[1,12345]",
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := citationText(tt.numbers); got != tt.want {
+				t.Fatalf("citationText() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestWriteCitationText(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		prefix  string
+		numbers []int
+		want    string
+	}{
+		"success: empty citations": {
+			prefix:  "Answer",
+			numbers: nil,
+			want:    "Answer[]",
+		},
+		"success: multiple citations": {
+			prefix:  "Answer",
+			numbers: []int{1, 2, 3},
+			want:    "Answer[1,2,3]",
+		},
+		"success: large citation number": {
+			prefix:  "Answer",
+			numbers: []int{1, 12345},
+			want:    "Answer[1,12345]",
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			var builder strings.Builder
+			builder.WriteString(tt.prefix)
+			writeCitationText(&builder, tt.numbers)
+			if got := builder.String(); got != tt.want {
+				t.Fatalf("writeCitationText() wrote %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
