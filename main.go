@@ -107,7 +107,7 @@ func run() error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	client, err := cfg.newClient(ctx)
+	client, err := cfg.NewClient(ctx)
 	if err != nil {
 		return fmt.Errorf("create genai client: %w", err)
 	}

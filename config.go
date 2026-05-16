@@ -23,48 +23,59 @@ import (
 )
 
 const (
-	defaultModel    = "gemini-3.1-pro-preview"
-	defaultLocation = "global"
+	// EnvGeminiModel is the environment variable for the Google Gemini model to use (e.g., "gemini-3.1-pro-preview").
+	// If not set, the server will use a default model.
+	EnvGeminiModel = "GEMINI_MODEL"
+
+	// GeminiAPIKey and GoogleAPIKey are environment variables for the API key to use when connecting to the Google Gemini API.
+	// If bot h are set, [GoogleAPIKey] will take precedence over [GeminiAPIKey].
+	GoogleAPIKey = "GOOGLE_API_KEY"
+	GeminiAPIKey = "GEMINI_API_KEY"
+
+	// EnvGoogleCloudProject is the environment variable for the Google Cloud project ID, used when connecting to Vertex AI.
+	EnvGoogleCloudProject = "GOOGLE_CLOUD_PROJECT"
+
+	// EnvGoogleCloudLocation is the environment variable for the Google Cloud location/region, used when connecting to Vertex AI.
+	EnvGoogleCloudLocation = "GOOGLE_CLOUD_LOCATION"
+
+	// EnvGoogleGenAIUseVertexAI is the environment variable to indicate whether to use Vertex AI as the backend for Google GenAI.
+	// If set to a truthy value (e.g., "1", "true", "yes"), the server will use Vertex AI; otherwise, it will use the Google Gemini API.
+	EnvGoogleGenAIUseVertexAI = "GOOGLE_GENAI_USE_VERTEXAI"
+)
+
+const (
+	// DefaultModel is the default Google Gemini model to use if none is specified in the environment variables.
+	DefaultModel = "gemini-3.1-pro-preview"
+	// DefaultLocation is the default location to use for Google Cloud Vertex AI if none is specified in the environment variables.
+	DefaultLocation = "global"
 )
 
 type serverConfig struct {
 	Model        string
-	ClientConfig genai.ClientConfig
+	ClientConfig *genai.ClientConfig
 }
 
 func loadConfigFromEnv(getenv func(string) string) (serverConfig, error) {
-	provider := strings.TrimSpace(getenv("GEMINI_PROVIDER"))
-	useVertex := provider == "vertex" || isTruthy(getenv("GOOGLE_GENAI_USE_VERTEXAI"))
-	if provider != "" && provider != "vertex" {
-		return serverConfig{}, fmt.Errorf("unsupported GEMINI_PROVIDER %q", provider)
-	}
-
 	cfg := serverConfig{
-		Model: strings.TrimSpace(getenv("GEMINI_MODEL")),
+		Model: strings.TrimSpace(getenv(EnvGeminiModel)),
 	}
 	if cfg.Model == "" {
-		cfg.Model = defaultModel
+		cfg.Model = DefaultModel
 	}
 
+	useVertex := isEnabled(getenv(EnvGoogleGenAIUseVertexAI))
 	if useVertex {
-		project := firstNonEmpty(
-			getenv("VERTEX_PROJECT_ID"),
-			getenv("GOOGLE_CLOUD_PROJECT"),
-		)
+		project := getenv(EnvGoogleCloudProject)
 		if project == "" {
-			return serverConfig{}, fmt.Errorf("VERTEX_PROJECT_ID or GOOGLE_CLOUD_PROJECT environment variable is required when using Vertex AI")
+			return serverConfig{}, fmt.Errorf("%q environment variable is required when using Google Vertex AI", EnvGoogleCloudProject)
 		}
 
-		location := firstNonEmpty(
-			getenv("VERTEX_LOCATION"),
-			getenv("GOOGLE_CLOUD_LOCATION"),
-			getenv("GOOGLE_CLOUD_REGION"),
-		)
+		location := getenv(EnvGoogleCloudLocation)
 		if location == "" {
-			location = defaultLocation
+			location = DefaultLocation
 		}
 
-		cfg.ClientConfig = genai.ClientConfig{
+		cfg.ClientConfig = &genai.ClientConfig{
 			Backend:  genai.BackendVertexAI,
 			Project:  project,
 			Location: location,
@@ -72,23 +83,21 @@ func loadConfigFromEnv(getenv func(string) string) (serverConfig, error) {
 		return cfg, nil
 	}
 
-	apiKey := firstNonEmpty(
-		getenv("GEMINI_API_KEY"),
-		getenv("GOOGLE_API_KEY"),
-	)
+	apiKey := firstNonEmpty(getenv(GoogleAPIKey), getenv(GeminiAPIKey))
 	if apiKey == "" {
-		return serverConfig{}, fmt.Errorf("GEMINI_API_KEY or GOOGLE_API_KEY environment variable is required when using Google AI Studio")
+		return serverConfig{}, fmt.Errorf("%q or %q environment variable is required when using Google AI Studio", GoogleAPIKey, GeminiAPIKey)
 	}
 
-	cfg.ClientConfig = genai.ClientConfig{
+	cfg.ClientConfig = &genai.ClientConfig{
 		Backend: genai.BackendGeminiAPI,
 		APIKey:  apiKey,
 	}
 	return cfg, nil
 }
 
-func (c serverConfig) newClient(ctx context.Context) (*genai.Client, error) {
-	return genai.NewClient(ctx, &c.ClientConfig)
+// NewClient creates a new [*genai.Client] based on the server configuration.
+func (c *serverConfig) NewClient(ctx context.Context) (*genai.Client, error) {
+	return genai.NewClient(ctx, c.ClientConfig)
 }
 
 func firstNonEmpty(values ...string) string {
@@ -101,7 +110,7 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-func isTruthy(value string) bool {
+func isEnabled(value string) bool {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case "1", "true", "yes", "on":
 		return true

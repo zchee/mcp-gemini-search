@@ -31,57 +31,57 @@ func TestLoadConfigFromEnv(t *testing.T) {
 		wantErr string
 	}{
 		{
-			name: "gemini api key",
+			name: "google api key",
 			env: map[string]string{
-				"GEMINI_API_KEY": "test-key",
-			},
-			want: serverConfig{
-				Model: defaultModel,
-				ClientConfig: genai.ClientConfig{
-					Backend: genai.BackendGeminiAPI,
-					APIKey:  "test-key",
-				},
-			},
-		},
-		{
-			name: "google api key fallback and custom model",
-			env: map[string]string{
-				"GOOGLE_API_KEY": "google-key",
-				"GEMINI_MODEL":   "gemini-2.0-flash",
+				GoogleAPIKey:   "google-key",
+				EnvGeminiModel: "gemini-2.0-flash",
 			},
 			want: serverConfig{
 				Model: "gemini-2.0-flash",
-				ClientConfig: genai.ClientConfig{
+				ClientConfig: &genai.ClientConfig{
 					Backend: genai.BackendGeminiAPI,
 					APIKey:  "google-key",
 				},
 			},
 		},
 		{
-			name: "vertex provider compatibility env",
+			name: "gemini api key fallback and custom model",
 			env: map[string]string{
-				"GEMINI_PROVIDER":   "vertex",
-				"VERTEX_PROJECT_ID": "project-1",
+				GoogleAPIKey: "test-key",
 			},
 			want: serverConfig{
-				Model: defaultModel,
-				ClientConfig: genai.ClientConfig{
+				Model: DefaultModel,
+				ClientConfig: &genai.ClientConfig{
+					Backend: genai.BackendGeminiAPI,
+					APIKey:  "test-key",
+				},
+			},
+		},
+		{
+			name: "vertex provider compatibility env",
+			env: map[string]string{
+				EnvGoogleCloudProject:     "project-1",
+				EnvGoogleGenAIUseVertexAI: "true",
+			},
+			want: serverConfig{
+				Model: DefaultModel,
+				ClientConfig: &genai.ClientConfig{
 					Backend:  genai.BackendVertexAI,
 					Project:  "project-1",
-					Location: defaultLocation,
+					Location: DefaultLocation,
 				},
 			},
 		},
 		{
 			name: "vertex native go sdk env fallback",
 			env: map[string]string{
-				"GOOGLE_GENAI_USE_VERTEXAI": "true",
-				"GOOGLE_CLOUD_PROJECT":      "project-2",
-				"GOOGLE_CLOUD_LOCATION":     "asia-northeast1",
+				EnvGoogleCloudProject:     "project-2",
+				EnvGoogleCloudLocation:    "asia-northeast1",
+				EnvGoogleGenAIUseVertexAI: "true",
 			},
 			want: serverConfig{
-				Model: defaultModel,
-				ClientConfig: genai.ClientConfig{
+				Model: DefaultModel,
+				ClientConfig: &genai.ClientConfig{
 					Backend:  genai.BackendVertexAI,
 					Project:  "project-2",
 					Location: "asia-northeast1",
@@ -89,23 +89,16 @@ func TestLoadConfigFromEnv(t *testing.T) {
 			},
 		},
 		{
-			name: "unsupported provider",
-			env: map[string]string{
-				"GEMINI_PROVIDER": "invalid",
-			},
-			wantErr: `unsupported GEMINI_PROVIDER "invalid"`,
-		},
-		{
 			name:    "missing api key",
 			env:     map[string]string{},
-			wantErr: "GEMINI_API_KEY or GOOGLE_API_KEY environment variable is required when using Google AI Studio",
+			wantErr: "\"GOOGLE_API_KEY\" or \"GEMINI_API_KEY\" environment variable is required when using Google AI Studio",
 		},
 		{
 			name: "missing vertex project",
 			env: map[string]string{
-				"GEMINI_PROVIDER": "vertex",
+				EnvGoogleGenAIUseVertexAI: "true",
 			},
-			wantErr: "VERTEX_PROJECT_ID or GOOGLE_CLOUD_PROJECT environment variable is required when using Vertex AI",
+			wantErr: "\"GOOGLE_CLOUD_PROJECT\" environment variable is required when using Google Vertex AI",
 		},
 	}
 
@@ -151,15 +144,15 @@ func TestServerConfigNewClientRejectsMutuallyExclusiveSettings(t *testing.T) {
 	t.Parallel()
 
 	cfg := serverConfig{
-		Model: defaultModel,
-		ClientConfig: genai.ClientConfig{
+		Model: DefaultModel,
+		ClientConfig: &genai.ClientConfig{
 			Backend: genai.BackendGeminiAPI,
 			APIKey:  "test-key",
 			Project: "project-1",
 		},
 	}
 
-	_, err := cfg.newClient(context.Background())
+	_, err := cfg.NewClient(context.Background())
 	if err == nil {
 		t.Fatal("newClient() error = nil, want non-nil")
 	}
@@ -179,14 +172,14 @@ func TestIsTruthy(t *testing.T) {
 
 	truthy := []string{"1", "true", "TRUE", " yes ", "on"}
 	for _, value := range truthy {
-		if !isTruthy(value) {
+		if !isEnabled(value) {
 			t.Fatalf("isTruthy(%q) = false, want true", value)
 		}
 	}
 
 	falsy := []string{"", "0", "false", "off"}
 	for _, value := range falsy {
-		if isTruthy(value) {
+		if isEnabled(value) {
 			t.Fatalf("isTruthy(%q) = true, want false", value)
 		}
 	}
