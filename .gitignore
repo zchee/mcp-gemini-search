@@ -3,57 +3,35 @@
 #  please consider a global .gitignore https://docs.github.com/en/get-started/git-basics/ignoring-files.
 #  PLEASE DO NOT open a pull request to add something created by your editor or tools
 
-# github/gitignore/Go
+# github/gitignore/Python
 #
-# Binaries for programs and plugins
-*.exe
-*.exe~
-*.dll
-*.so
-*.dylib
+# Byte-compiled / optimized / cached files
+__pycache__/
+*.py[cod]
 
-# Test binary, built with `go test -c`
-*.test
+# Virtual environment
+.venv/
 
-# Code coverage profiles and other test artifacts
-*.out
-coverage.*
-*.coverprofile
-profile.cov
+# Packaging and build artifacts
+build/
+dist/
+*.egg-info/
 
-# Dependency directories
-vendor/
+# Tool caches
+.pytest_cache/
+.ruff_cache/
+.benchmarks/
 
 # Editor/IDE
 # .idea/
 # .vscode/
 
-# Compiled Object files, Static and Dynamic libs (Shared Objects)
-*.o
-*.a
-
-# Folders
-_obj
-_test
-
-# Architecture specific extensions/prefixes
-*.[568vq]
-[568vq].out
-
-# cgo generated
-*.cgo1.go
-*.cgo2.c
-_cgo_defun.c
-_cgo_gotypes.go
-_cgo_export.*
-
-# test generated
-_testmain.go
+# Code coverage reports
+.coverage
+coverage.*
+htmlcov/
 
 # benchmark
 old.txt
 new.txt
 bench.txt
-
-# profile
-*.pprof
