@@ -16,13 +16,13 @@
 
 from __future__ import annotations
 
-import json
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
 import anyio
+import orjson
 import pytest
 from google import genai
 from mcp import types
@@ -47,7 +47,7 @@ _GOLDEN_DIR = Path(__file__).parent / "golden"
 
 
 def _load_golden(name: str) -> dict[str, Any]:
-    return json.loads((_GOLDEN_DIR / name).read_text(encoding="utf-8"))
+    return orjson.loads((_GOLDEN_DIR / name).read_text(encoding="utf-8"))
 
 
 class _StubService(GoogleSearchService):

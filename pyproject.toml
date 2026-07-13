@@ -9,6 +9,8 @@ license-files = ["LICENSE"]
 dependencies = [
     "mcp>=1.28.1",
     "google-genai[aiohttp]>=2.11.0",
+    "orjson>=3.11.9",
+    "uvloop>=0.22.1 ; sys_platform != 'win32'",
 ]
 
 [project.urls]

@@ -17,13 +17,13 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import os
 import signal
 import sys
 from pathlib import Path
 
 import anyio
+import orjson
 import pytest
 from mcp import types
 from mcp.client.session import ClientSession
@@ -83,7 +83,7 @@ async def _kill(proc: asyncio.subprocess.Process) -> None:
 
 
 async def test_stdio_handshake_reports_golden_server_info_and_tool() -> None:
-    golden = json.loads(
+    golden = orjson.loads(
         (Path(__file__).parent / "golden" / "initialize.json").read_text(
             encoding="utf-8"
         )
@@ -153,7 +153,7 @@ async def test_stdin_eof_exits_zero_without_pollution() -> None:
     assert stderr == b""
     for line in (first + rest).split(b"\n"):
         if line.strip():
-            json.loads(line)
+            orjson.loads(line)
 
 
 @pytest.mark.skipif(

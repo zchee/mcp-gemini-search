@@ -14,12 +14,12 @@
 
 """Tests for the Google Search grounding service."""
 
-import json
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
 import jsonschema
+import orjson
 import pytest
 from google.genai import types
 
@@ -452,7 +452,7 @@ def test_to_structured_omits_empty_sources() -> None:
 
 def _golden_output_schema() -> dict[str, Any]:
     path = Path(__file__).parent / "golden" / "tools_list.json"
-    data = json.loads(path.read_text(encoding="utf-8"))
+    data = orjson.loads(path.read_text(encoding="utf-8"))
     tool: dict[str, Any] = data["result"]["tools"][0]
     return tool["outputSchema"]
 

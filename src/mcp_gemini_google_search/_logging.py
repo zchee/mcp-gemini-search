@@ -28,7 +28,6 @@ Parity notes:
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 from collections.abc import AsyncGenerator
@@ -37,6 +36,7 @@ from datetime import datetime
 from typing import TextIO
 
 import anyio
+import orjson
 from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
 from mcp.shared.message import SessionMessage
 
@@ -61,7 +61,7 @@ def _slog_quote(value: str) -> str:
     contains whitespace, ``=`` or ``"``; otherwise it is written verbatim.
     """
     if value == "" or any(ch <= " " or ch in '="' for ch in value):
-        return json.dumps(value)
+        return orjson.dumps(value).decode()
     return value
 
 

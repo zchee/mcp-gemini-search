@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import os
 import signal
 import sys
@@ -52,6 +53,17 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def _backend_options() -> dict[str, bool]:
+    """Select uvloop for the anyio asyncio backend when it is installed.
+
+    uvloop is a platform-conditional dependency (non-Windows); when it is
+    absent the default asyncio event loop is used.
+    """
+    if importlib.util.find_spec("uvloop") is None:
+        return {}
+    return {"use_uvloop": True}
+
+
 def main() -> None:
     """Console-script entry point.
 
@@ -83,7 +95,7 @@ def _run(logpath: str) -> None:
 
         _logging.logger.info(_STARTUP_MESSAGE)
         try:
-            anyio.run(_serve, server, logpath)
+            anyio.run(_serve, server, logpath, backend_options=_backend_options())
         except Exception as e:
             _logging.logger.error("serve gemini google search mcp stdio server: %s", e)
             raise RuntimeError(
