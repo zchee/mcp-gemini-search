@@ -33,11 +33,12 @@ TOOL_DESCRIPTION = (
     "based on a query."
 )
 
-# inputSchema and outputSchema are reproduced byte-for-byte from the Go server's
-# tools/list response (tests/golden/tools_list.json). The mcp SDK validates tool
-# input against inputSchema and structured output against outputSchema, so both
-# must stay identical to the golden. Note the ``sources`` type is
-# ["null", "array"] (a nullable slice in the go-sdk generator), NOT "array".
+# inputSchema and outputSchema are pinned byte-for-byte by the golden tools/list
+# response (tests/golden/tools_list.json); any change here must update the
+# golden in lockstep. The mcp SDK validates tool input against inputSchema and
+# structured output against outputSchema. Note the ``sources`` type is
+# ["null", "array"] (a nullable slice inherited from the retired Go server's
+# schema generator), NOT "array".
 _INPUT_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
@@ -60,7 +61,8 @@ _OUTPUT_SCHEMA: dict[str, Any] = {
         "text": {
             "type": "string",
             "description": (
-                "The grounded response text with inline citations and an appended source list when available."
+                "The grounded response text formatted as Markdown, with inline citation "
+                "links and an appended Sources section when available."
             ),
         },
         "sources": {

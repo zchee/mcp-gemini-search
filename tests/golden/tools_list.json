@@ -28,7 +28,7 @@
             },
             "text": {
               "type": "string",
-              "description": "The grounded response text with inline citations and an appended source list when available."
+              "description": "The grounded response text formatted as Markdown, with inline citation links and an appended Sources section when available."
             },
             "sources": {
               "type": [

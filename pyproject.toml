@@ -30,6 +30,8 @@ dependencies = [
     "google-genai[aiohttp]>=2.11.0",
     "orjson>=3.11.9",
     "uvloop>=0.22.1 ; sys_platform != 'win32'",
+    "mdformat>=1.0.0",
+    "mdformat-gfm>=1.0.0",
 ]
 
 [project.urls]

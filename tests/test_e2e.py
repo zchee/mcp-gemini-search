@@ -213,4 +213,4 @@ async def test_live_google_search_returns_grounded_text() -> None:
     assert isinstance(block, types.TextContent)
     assert block.text.strip()
     if result.structuredContent and result.structuredContent.get("sources"):
-        assert "\n\nSources:\n[" in block.text
+        assert "\n## Sources\n" in block.text

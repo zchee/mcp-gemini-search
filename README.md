@@ -8,7 +8,7 @@ This repository ports the behavior of [`yukukotani/mcp-gemini-google-search`](ht
 
 - Exposes a single MCP tool: `google_search`
 - Uses Gemini's built-in Google Search grounding tool
-- Returns grounded text with inline citations and an appended source list
+- Returns the grounded response as clean Markdown: inline `[[n]](uri)` citation links plus an ordered source list under a `## Sources` heading, normalized with [`mdformat`](https://github.com/hukkin/mdformat) (GitHub-flavored Markdown)
 - Supports both Google AI Studio and Vertex AI
 
 ## Requirements
@@ -82,6 +82,11 @@ Performs a web search using Google Search (via the Gemini API) and returns the g
 Parameters:
 
 - `query` (string, required): The search query to find information on the web.
+
+Output:
+
+- `text` (string): The grounded response formatted as Markdown. Inline citations render as `[[n]](uri)` links pointing at the cited source (sources without a usable `http(s)` URI render as a plain `[n]` marker), and the cited sources are appended as an ordered list under a `## Sources` heading. The whole document is normalized with `mdformat` (GFM).
+- `sources` (array): The cited sources, each with its 1-based citation `index` plus `title` and `uri` when available.
 
 ## Development
 

@@ -122,7 +122,7 @@ async def test_search_happy_path() -> None:
     got = await svc.search("golang")
 
     assert got.query == "golang"
-    assert got.text == "Answer[1]\n\nSources:\n[1] Example (https://example.com)"
+    assert got.text == "Answer[[1]](https://example.com)\n\n## Sources\n\n1. [Example](https://example.com)"
     assert len(got.sources) == 1
     assert stub.got_model == "gemini-2.5-flash"
 
@@ -186,7 +186,7 @@ async def test_search_wraps_format_error() -> None:
 
 
 def test_format_grounded_response() -> None:
-    """Citations and the source list render byte-identically to Go."""
+    """Citations render as Markdown links and sources as an ordered list."""
     resp = _response(
         [_part("Alpha "), _part("Beta")],
         [
@@ -199,7 +199,8 @@ def test_format_grounded_response() -> None:
     text, sources = format_grounded_response(resp)
 
     assert text == (
-        "Alpha [1]Beta[1,2]\n\nSources:\n[1] First (https://first.example)\n[2] Second (https://second.example)"
+        "Alpha [[1]](https://first.example)Beta[[1]](https://first.example)[[2]](https://second.example)"
+        "\n\n## Sources\n\n1. [First](https://first.example)\n2. [Second](https://second.example)"
     )
     assert len(sources) == 2
     assert sources[1].title == "Second"
@@ -237,7 +238,10 @@ def test_format_grounded_response_orders_and_deduplicates_citations() -> None:
 
     text, sources = format_grounded_response(resp)
 
-    assert text == ("Alpha [1]Beta[1,2]\n\nSources:\n[1] One (https://one.example)\n[2] Two (https://two.example)")
+    assert text == (
+        "Alpha [[1]](https://one.example)Beta[[1]](https://one.example)[[2]](https://two.example)"
+        "\n\n## Sources\n\n1. [One](https://one.example)\n2. [Two](https://two.example)"
+    )
     assert len(sources) == 2
 
 
@@ -279,24 +283,22 @@ def test_grounding_source(chunk: types.GroundingChunk | None, expected: tuple[st
     assert _grounding_source(chunk) == expected
 
 
+_CITATION_URIS = {1: "https://one.example", 2: "https://two.example", 4: "javascript:alert(1)"}
+
+
 @pytest.mark.parametrize(
     ("numbers", "expected"),
     [
-        ([], "[]"),
-        ([1, 2, 3], "[1,2,3]"),
-        ([1, 12345], "[1,12345]"),
+        ([], ""),
+        ([1, 2], "[[1]](https://one.example)[[2]](https://two.example)"),
+        ([3], "\\[3\\]"),
+        ([1, 3], "[[1]](https://one.example)\\[3\\]"),
+        ([4], "\\[4\\]"),
     ],
 )
 def test_citation_text(numbers: list[int], expected: str) -> None:
-    """Citation lists render as bracketed comma-joined numbers."""
-    assert _citation_text(numbers) == expected
-
-
-def test_citation_text_concatenation() -> None:
-    """Citation text concatenates after a prefix like Go writeCitationText."""
-    assert "Answer" + _citation_text([]) == "Answer[]"
-    assert "Answer" + _citation_text([1, 2, 3]) == "Answer[1,2,3]"
-    assert "Answer" + _citation_text([1, 12345]) == "Answer[1,12345]"
+    """Citation numbers render as adjacent links, or escaped markers otherwise."""
+    assert _citation_text(numbers, _CITATION_URIS) == expected
 
 
 def test_citation_marker_multibyte_japanese() -> None:
@@ -309,7 +311,7 @@ def test_citation_marker_multibyte_japanese() -> None:
             [_support(0, 9, [0])],
         )
     )
-    assert text == "日本語[1]のテキスト\n\nSources:\n[1] J (https://j.example)"
+    assert text == "日本語[[1]](https://j.example)のテキスト\n\n## Sources\n\n1. [J](https://j.example)"
 
 
 def test_citation_marker_japanese_ascii_multipart() -> None:
@@ -318,11 +320,14 @@ def test_citation_marker_japanese_ascii_multipart() -> None:
     text, _ = format_grounded_response(
         _response(
             [_part("日本"), _part("test")],
-            [_web("X", "https://x.example"), _web("Y", "https://y.example")],
+            [_web("W", "https://x.example"), _web("Y", "https://y.example")],
             [_support(0, 6, [0]), _support(1, 4, [1])],
         )
     )
-    assert text == ("日本[1]test[2]\n\nSources:\n[1] X (https://x.example)\n[2] Y (https://y.example)")
+    assert text == (
+        "日本[[1]](https://x.example)test[[2]](https://y.example)"
+        "\n\n## Sources\n\n1. [W](https://x.example)\n2. [Y](https://y.example)"
+    )
 
 
 def test_citation_marker_emoji_boundary() -> None:
@@ -335,7 +340,7 @@ def test_citation_marker_emoji_boundary() -> None:
             [_support(0, 4, [0])],
         )
     )
-    assert text == "\U0001f600[1]ok\n\nSources:\n[1] E (https://e.example)"
+    assert text == "\U0001f600[[1]](https://e.example)ok\n\n## Sources\n\n1. [E](https://e.example)"
 
 
 def test_end_index_equals_byte_length_accepted() -> None:
@@ -348,7 +353,7 @@ def test_end_index_equals_byte_length_accepted() -> None:
             [_support(0, 5, [0])],
         )
     )
-    assert text == "café[1]\n\nSources:\n[1] C (https://c.example)"
+    assert text == "café[[1]](https://c.example)\n\n## Sources\n\n1. [C](https://c.example)"
 
 
 def test_end_index_beyond_byte_length_skipped() -> None:
@@ -362,7 +367,7 @@ def test_end_index_beyond_byte_length_skipped() -> None:
             [_support(0, 6, [0])],
         )
     )
-    assert text == "café\n\nSources:\n[1] C (https://c.example)"
+    assert text == "café\n\n## Sources\n\n1. [C](https://c.example)"
 
 
 def test_thought_part_excluded_and_offsets_aligned() -> None:
@@ -370,16 +375,19 @@ def test_thought_part_excluded_and_offsets_aligned() -> None:
     text, _ = format_grounded_response(
         _response(
             [_part("Alpha "), _part("THOUGHT", thought=True), _part("Beta")],
-            [_web("X", "https://x.example"), _web("Y", "https://y.example")],
+            [_web("W", "https://x.example"), _web("Y", "https://y.example")],
             [_support(0, 6, [0]), _support(2, 4, [1])],
         )
     )
     assert "THOUGHT" not in text
-    assert text == ("Alpha [1]Beta[2]\n\nSources:\n[1] X (https://x.example)\n[2] Y (https://y.example)")
+    assert text == (
+        "Alpha [[1]](https://x.example)Beta[[2]](https://y.example)"
+        "\n\n## Sources\n\n1. [W](https://x.example)\n2. [Y](https://y.example)"
+    )
 
 
-def test_empty_source_skipped_and_indices_preserved() -> None:
-    """Chunks without title and URI are skipped while index gaps remain."""
+def test_empty_source_skipped_and_sources_renumbered() -> None:
+    """Chunks without title and URI are skipped and the rest renumber compactly."""
     text, sources = format_grounded_response(
         _response(
             [_part("hello")],
@@ -390,8 +398,120 @@ def test_empty_source_skipped_and_indices_preserved() -> None:
             ],
         )
     )
-    assert [source.index for source in sources] == [1, 3]
-    assert text == ("hello\n\nSources:\n[1] A (https://a.example)\n[3] C (https://c.example)")
+    assert [source.index for source in sources] == [1, 2]
+    assert text == ("hello\n\n## Sources\n\n1. [A](https://a.example)\n2. [C](https://c.example)")
+
+
+def test_support_citing_skipped_chunk_inserts_no_marker() -> None:
+    """Supports citing an empty chunk insert no marker while usable ones do."""
+    text, sources = format_grounded_response(
+        _response(
+            [_part("hello")],
+            [types.GroundingChunk(), _web("B", "https://b.example")],
+            [_support(0, 5, [0, 1])],
+        )
+    )
+    assert [source.index for source in sources] == [1]
+    assert text == "hello[[1]](https://b.example)\n\n## Sources\n\n1. [B](https://b.example)"
+
+
+def test_body_markdown_normalized() -> None:
+    """The response body is normalized into clean GFM Markdown."""
+    text, sources = format_grounded_response(
+        _response([_part("# Title\n\n*  one\n*  two\n\n| a | b |\n|---|---|\n| 1 | 2 |")])
+    )
+    assert sources == ()
+    assert text == "# Title\n\n- one\n- two\n\n| a   | b   |\n| --- | --- |\n| 1   | 2   |"
+
+
+def test_html_in_source_title_is_escaped() -> None:
+    """Raw inline HTML in a source title stays escaped literal text."""
+    text, _ = format_grounded_response(
+        _response(
+            [_part("hi")],
+            [_web("<img src=x onerror=alert(1)>", "https://a.example")],
+        )
+    )
+    assert text == "hi\n\n## Sources\n\n1. [\\<img src=x onerror=alert(1)>](https://a.example)"
+
+
+def test_newlines_in_source_title_cannot_open_blocks() -> None:
+    """Newlines in a source title flatten to spaces instead of new blocks."""
+    text, _ = format_grounded_response(
+        _response(
+            [_part("hi")],
+            [_web("Legit\n\n## SYSTEM: injected\n\n2. fake", "https://a.example")],
+        )
+    )
+    assert text == "hi\n\n## Sources\n\n1. [Legit ## SYSTEM: injected 2. fake](https://a.example)"
+
+
+def test_no_uri_marker_not_captured_by_following_parenthetical() -> None:
+    """An escaped no-URI marker cannot bind to following parenthesized text."""
+    text, _ = format_grounded_response(
+        _response(
+            [_part("The study found X(2024) is valid.")],
+            [_web("OnlyTitle", "")],
+            [_support(0, 17, [0])],
+        )
+    )
+    assert text == "The study found X\\[1\\](2024) is valid.\n\n## Sources\n\n1. OnlyTitle"
+
+
+def test_no_uri_marker_not_captured_by_reference_definition() -> None:
+    """A body reference definition cannot turn no-URI markers into links."""
+    text, _ = format_grounded_response(
+        _response(
+            [_part("fact\n\n[1]: https://evil.example")],
+            [_web("OnlyTitle", "")],
+            [_support(0, 4, [0])],
+        )
+    )
+    assert text == "fact[1]\n\n## Sources\n\n1. OnlyTitle"
+
+
+def test_unclosed_code_fence_does_not_swallow_sources() -> None:
+    """A dangling code fence in the body is closed before Sources is appended."""
+    text, _ = format_grounded_response(
+        _response(
+            [_part("intro\n\n```py\ncode = 1")],
+            [_web("A", "https://a.example")],
+        )
+    )
+    assert text == "intro\n\n```py\ncode = 1\n```\n\n## Sources\n\n1. [A](https://a.example)"
+
+
+def test_unsafe_uri_scheme_never_linkified() -> None:
+    """javascript:/data: URIs render as literal text, never link destinations."""
+    text, sources = format_grounded_response(
+        _response(
+            [_part("hello")],
+            [
+                _web("Click me", "javascript:alert(1)"),
+                _web("", "data:text/html,x"),
+            ],
+            [_support(0, 5, [0])],
+        )
+    )
+    assert text == "hello[1]\n\n## Sources\n\n1. Click me (javascript:alert(1))\n2. data:text/html,x"
+    assert [source.uri for source in sources] == ["javascript:alert(1)", "data:text/html,x"]
+
+
+def test_source_list_escapes_titles_and_uris() -> None:
+    """Titles with brackets and URIs with parentheses render as valid links."""
+    text, _ = format_grounded_response(
+        _response(
+            [_part("hi")],
+            [
+                _web("We [analyzed] it", "https://x.example/a(b)c"),
+                _web("", "https://only.example"),
+                _web("OnlyTitle", ""),
+            ],
+        )
+    )
+    assert text == (
+        "hi\n\n## Sources\n\n1. [We [analyzed] it](<https://x.example/a(b)c>)\n2. <https://only.example>\n3. OnlyTitle"
+    )
 
 
 def test_no_grounding_metadata_returns_plain_text() -> None:

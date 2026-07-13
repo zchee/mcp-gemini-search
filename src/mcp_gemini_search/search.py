@@ -16,10 +16,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
 
 from google.genai import types
+
+from mcp_gemini_search import _markdown
 
 
 @dataclass(frozen=True, slots=True)
@@ -124,12 +127,18 @@ class GoogleSearchService:
 def format_grounded_response(
     resp: types.GenerateContentResponse | None,
 ) -> tuple[str, tuple[GoogleSearchSource, ...]]:
-    """Format a Gemini response into grounded text and its cited sources.
+    """Format a Gemini response into clean Markdown text and its cited sources.
 
     Citation markers are inserted at UTF-8 byte offsets: Gemini's
     ``Segment.end_index`` is a byte offset into the UTF-8 encoding of the part
     text, so all offset arithmetic runs on ``str.encode("utf-8")`` and the cited
     text is assembled from byte slices and decoded exactly once.
+
+    Sources are numbered compactly in grounding-chunk order (chunks without a
+    title and URI are skipped), inline citations render as ``[[n]](uri)``
+    Markdown links pointing at the cited source, and a trailing ``## Sources``
+    section lists every source as an ordered list whose labels match the
+    inline citation numbers. The whole document is normalized with mdformat.
 
     Raises:
         RuntimeError: If ``resp`` is ``None`` or contains no usable text.
@@ -143,39 +152,59 @@ def format_grounded_response(
 
     candidates = resp.candidates
     if not candidates or candidates[0] is None:
-        return text, ()
+        return _markdown.format_document(text), ()
 
     candidate = candidates[0]
     metadata = candidate.grounding_metadata
     if metadata is None:
-        return text, ()
+        return _markdown.format_document(text), ()
 
     sources: list[GoogleSearchSource] = []
+    number_by_chunk: dict[int, int] = {}
     for idx, chunk in enumerate(metadata.grounding_chunks or []):
         title, uri = _grounding_source(chunk)
         if not title and not uri:
             continue
-        sources.append(GoogleSearchSource(index=idx + 1, title=title, uri=uri))
+        number_by_chunk[idx] = len(sources) + 1
+        sources.append(GoogleSearchSource(index=len(sources) + 1, title=title, uri=uri))
 
     formatted = text
     content = candidate.content
     parts = content.parts if content is not None else None
     supports = metadata.grounding_supports or []
     if parts and supports and sources:
-        formatted = _insert_citations(text, parts, supports)
+        uri_by_number = {source.index: source.uri for source in sources}
+        formatted = _insert_citations(text, parts, supports, number_by_chunk, uri_by_number)
 
-    if not sources:
-        return formatted, ()
+    # Normalize the body on its own first: mdformat closes any dangling code
+    # fence, so the appended Sources section cannot be swallowed by one.
+    document = _markdown.format_document(formatted)
+    if sources:
+        document = _markdown.format_document(f"{document}\n\n## Sources\n\n{_render_source_list(sources)}")
+    return document, tuple(sources)
 
+
+def _render_source_list(sources: Sequence[GoogleSearchSource]) -> str:
+    """Render sources as an ordered Markdown list whose labels match citations.
+
+    URIs with a non-allowlisted scheme are rendered as literal text, never as
+    link destinations.
+    """
     lines: list[str] = []
     for source in sources:
-        if source.title and source.uri:
-            lines.append(f"[{source.index}] {source.title} ({source.uri})")
-        elif source.title:
-            lines.append(f"[{source.index}] {source.title}")
+        safe = _markdown.is_safe_uri(source.uri)
+        if source.title and source.uri and safe:
+            entry = _markdown.link(source.title, source.uri)
+        elif source.uri and safe:
+            entry = _markdown.autolink_or_link(source.uri)
+        elif source.title and source.uri:
+            entry = f"{_markdown.escape_link_text(source.title)} ({_markdown.escape_link_text(source.uri)})"
         elif source.uri:
-            lines.append(f"[{source.index}] {source.uri}")
-    return formatted + "\n\nSources:\n" + "\n".join(lines), tuple(sources)
+            entry = _markdown.escape_link_text(source.uri)
+        else:
+            entry = _markdown.escape_link_text(source.title)
+        lines.append(f"{source.index}. {entry}")
+    return "\n".join(lines)
 
 
 def _candidate_text(resp: types.GenerateContentResponse) -> str:
@@ -202,8 +231,14 @@ def _insert_citations(
     text: str,
     parts: list[types.Part],
     supports: list[types.GroundingSupport],
+    number_by_chunk: Mapping[int, int],
+    uri_by_number: Mapping[int, str],
 ) -> str:
-    """Insert ``[n]`` citation markers into ``text`` at UTF-8 byte offsets."""
+    """Insert Markdown citation links into ``text`` at UTF-8 byte offsets.
+
+    ``number_by_chunk`` maps grounding-chunk indices to compact source numbers;
+    supports citing a chunk without a usable source insert no marker.
+    """
     text_bytes = text.encode("utf-8")
     part_count = len(parts)
     part_offsets = [0] * part_count
@@ -236,8 +271,8 @@ def _insert_citations(
 
         global_offset = base_offset + end_index
         for chunk_index in indices:
-            number = chunk_index + 1
-            if number <= 0:
+            number = number_by_chunk.get(chunk_index)
+            if number is None:
                 continue
             insertions.append((global_offset, number))
 
@@ -265,7 +300,7 @@ def _insert_citations(
                 numbers.append(number)
             j += 1
 
-        result += _citation_text(numbers).encode("utf-8")
+        result += _citation_text(numbers, uri_by_number).encode("utf-8")
         last_offset = offset
         i = j
 
@@ -295,8 +330,18 @@ def _grounding_source(chunk: types.GroundingChunk | None) -> tuple[str, str]:
     return "", ""
 
 
-def _citation_text(numbers: list[int]) -> str:
-    """Render citation numbers as ``[1,2,3]``; an empty list renders as ``[]``."""
-    if not numbers:
-        return "[]"
-    return "[" + ",".join(str(number) for number in numbers) + "]"
+def _citation_text(numbers: list[int], uri_by_number: Mapping[int, str]) -> str:
+    """Render citation numbers as adjacent ``[[n]](uri)`` Markdown links.
+
+    Numbers without a usable URI (missing or with a non-allowlisted scheme)
+    render as escaped ``\\[n\\]`` markers so surrounding body text can never
+    capture them into a link; an empty list renders as an empty string.
+    """
+    pieces: list[str] = []
+    for number in numbers:
+        uri = uri_by_number.get(number, "")
+        if uri and _markdown.is_safe_uri(uri):
+            pieces.append(f"[[{number}]]({_markdown.format_destination(uri)})")
+        else:
+            pieces.append(f"\\[{number}\\]")
+    return "".join(pieces)
