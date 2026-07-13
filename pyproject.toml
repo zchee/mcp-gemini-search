@@ -1,0 +1,47 @@
+[project]
+name = "mcp-gemini-google-search"
+version = "0.0.1"
+description = "MCP server that provides Google Search via Gemini's built-in Grounding with Google Search feature."
+readme = "README.md"
+requires-python = ">=3.13"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+dependencies = [
+    "mcp>=1.28.1",
+    "google-genai[aiohttp]>=2.11.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/zchee/mcp-gemini-google-search"
+Repository = "https://github.com/zchee/mcp-gemini-google-search"
+
+[project.scripts]
+mcp-gemini-google-search = "mcp_gemini_google_search.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "anyio",
+    "jsonschema",
+    "pytest-benchmark",
+    "ruff",
+    "ty",
+]
+
+[build-system]
+requires = ["uv_build>=0.11.26,<0.12.0"]
+build-backend = "uv_build"
+
+[tool.ruff]
+line-length = 88
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+addopts = "-m 'not benchmark and not live'"
+markers = [
+    "benchmark: performance benchmarks; deselected by default, run with -m benchmark",
+    "live: tests that call the real Gemini API; deselected by default, run with -m live",
+]

@@ -1,0 +1,71 @@
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "result": {
+    "tools": [
+      {
+        "description": "Performs a web search using Google Search (via the Gemini API) and returns the results. This tool is useful for finding information on the internet based on a query.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string",
+              "description": "The search query to find information on the web."
+            }
+          },
+          "required": [
+            "query"
+          ],
+          "additionalProperties": false
+        },
+        "name": "google_search",
+        "outputSchema": {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string",
+              "description": "The original search query."
+            },
+            "text": {
+              "type": "string",
+              "description": "The grounded response text with inline citations and an appended source list when available."
+            },
+            "sources": {
+              "type": [
+                "null",
+                "array"
+              ],
+              "items": {
+                "type": "object",
+                "properties": {
+                  "index": {
+                    "type": "integer",
+                    "description": "The 1-based citation index shown in the response text."
+                  },
+                  "title": {
+                    "type": "string",
+                    "description": "The title of the cited source."
+                  },
+                  "uri": {
+                    "type": "string",
+                    "description": "The source URL or canonical URI."
+                  }
+                },
+                "required": [
+                  "index"
+                ],
+                "additionalProperties": false
+              },
+              "description": "The sources referenced by the grounded response."
+            }
+          },
+          "required": [
+            "query",
+            "text"
+          ],
+          "additionalProperties": false
+        }
+      }
+    ]
+  }
+}
