@@ -12,28 +12,43 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Low-level MCP server exposing google_search and optional deep research tools."""
+"""Low-level MCP server exposing search and Deep Research tools."""
 
 from __future__ import annotations
 
+import enum
 from typing import Any
 
 from mcp import types
 from mcp.server.lowlevel import Server
 
 from mcp_gemini_search import __version__
-from mcp_gemini_search.research import DeepResearchService
+from mcp_gemini_search.research import (
+    DEEP_RESEARCH_AGENT,
+    DEEP_RESEARCH_MAX_AGENT,
+    DeepResearchService,
+)
 from mcp_gemini_search.search import GoogleSearchService
 
 SERVER_NAME = "mcp-gemini-search"
 WEBSITE_URL = "https://github.com/zchee/mcp-gemini-search"
-TOOL_NAME = "google_search"
+
+
+class ToolName(enum.StrEnum):
+    """The MCP tool names this server advertises."""
+
+    GOOGLE_SEARCH = "google_search"
+    DEEP_RESEARCH = "deep_research"
+    DEEP_RESEARCH_RESULT = "deep_research_result"
+
+
+TOOL_NAME = ToolName.GOOGLE_SEARCH
 TOOL_DESCRIPTION = (
     "Performs a web search using Google Search (via the Gemini API) and returns "
     "the results. This tool is useful for finding information on the internet "
     "based on a query."
 )
-RESEARCH_TOOL_NAME = "deep_research"
+RESEARCH_TOOL_NAME = ToolName.DEEP_RESEARCH
 RESEARCH_TOOL_DESCRIPTION = (
     "Starts a Gemini Deep Research agent run in the background and returns an "
     "interaction_id immediately; research typically takes several minutes and is "
@@ -42,7 +57,7 @@ RESEARCH_TOOL_DESCRIPTION = (
     "instead. Optional plan_only requests a research plan for review before "
     "execution; previous_interaction_id continues or refines a prior run."
 )
-RESEARCH_RESULT_TOOL_NAME = "deep_research_result"
+RESEARCH_RESULT_TOOL_NAME = ToolName.DEEP_RESEARCH_RESULT
 RESEARCH_RESULT_TOOL_DESCRIPTION = (
     "Fetches the status (and, once completed, the formatted report) of a "
     "deep_research run by its interaction_id. Call repeatedly until status is "
@@ -125,6 +140,16 @@ _RESEARCH_INPUT_SCHEMA: dict[str, Any] = {
         "previous_interaction_id": {
             "type": "string",
             "description": "Continue, refine, or approve a prior deep_research interaction by its id.",
+        },
+        "agent": {
+            "type": "string",
+            "enum": [DEEP_RESEARCH_AGENT, DEEP_RESEARCH_MAX_AGENT],
+            "description": (
+                "Override the server-configured agent for this call only: "
+                "'deep-research-preview-04-2026' is faster, "
+                "'deep-research-max-preview-04-2026' is more comprehensive. "
+                "Falls back to the server-configured agent when omitted."
+            ),
         },
     },
     "required": ["query"],
@@ -214,15 +239,15 @@ _RESEARCH_RESULT_OUTPUT_SCHEMA: dict[str, Any] = {
 
 def create_server(
     service: GoogleSearchService,
-    research: DeepResearchService | None = None,
+    research: DeepResearchService,
 ) -> Server:
-    """Create the low-level MCP server wired to ``service`` and optional ``research``.
+    """Create the low-level MCP server wired to search and research services.
 
     The server identity (name, version, website URL) reproduces the Go server's
     ``serverInfo`` exactly. The ``google_search`` tool returns its grounded text
     as unstructured content and the structured output dict as
-    ``structuredContent``; when ``research`` is provided, the opt-in
-    ``deep_research`` and ``deep_research_result`` tools are advertised as well.
+    ``structuredContent``. The ``deep_research`` and ``deep_research_result``
+    tools are always advertised.
     Failures propagate as exceptions, which the SDK converts into an ``isError``
     result carrying the exception message.
     """
@@ -235,65 +260,64 @@ def create_server(
     # The low-level SDK awaits tool handlers, so this must stay async.
     @server.list_tools()
     async def list_tools() -> list[types.Tool]:  # noqa: RUF029
-        tools = [
+        return [
             types.Tool(
                 name=TOOL_NAME,
                 description=TOOL_DESCRIPTION,
                 inputSchema=_INPUT_SCHEMA,
                 outputSchema=_OUTPUT_SCHEMA,
-            )
+            ),
+            types.Tool(
+                name=RESEARCH_TOOL_NAME,
+                description=RESEARCH_TOOL_DESCRIPTION,
+                inputSchema=_RESEARCH_INPUT_SCHEMA,
+                outputSchema=_RESEARCH_OUTPUT_SCHEMA,
+            ),
+            types.Tool(
+                name=RESEARCH_RESULT_TOOL_NAME,
+                description=RESEARCH_RESULT_TOOL_DESCRIPTION,
+                inputSchema=_RESEARCH_RESULT_INPUT_SCHEMA,
+                outputSchema=_RESEARCH_RESULT_OUTPUT_SCHEMA,
+            ),
         ]
-        if research is not None:
-            tools.extend([
-                types.Tool(
-                    name=RESEARCH_TOOL_NAME,
-                    description=RESEARCH_TOOL_DESCRIPTION,
-                    inputSchema=_RESEARCH_INPUT_SCHEMA,
-                    outputSchema=_RESEARCH_OUTPUT_SCHEMA,
-                ),
-                types.Tool(
-                    name=RESEARCH_RESULT_TOOL_NAME,
-                    description=RESEARCH_RESULT_TOOL_DESCRIPTION,
-                    inputSchema=_RESEARCH_RESULT_INPUT_SCHEMA,
-                    outputSchema=_RESEARCH_RESULT_OUTPUT_SCHEMA,
-                ),
-            ])
-        return tools
 
     @server.call_tool()
     async def call_tool(name: str, arguments: dict[str, Any]) -> tuple[list[types.ContentBlock], dict[str, Any]]:
-        if name == TOOL_NAME:
-            output = await service.search(arguments["query"])
-            content: list[types.ContentBlock] = [types.TextContent(type="text", text=output.text)]
-            return content, output.to_structured()
+        match name:
+            case ToolName.GOOGLE_SEARCH:
+                output = await service.search(arguments["query"])
+                content: list[types.ContentBlock] = [types.TextContent(type="text", text=output.text)]
+                return content, output.to_structured()
 
-        if research is not None and name == RESEARCH_TOOL_NAME:
-            start = await research.start(
-                arguments["query"],
-                plan_only=arguments.get("plan_only", False),
-                previous_interaction_id=arguments.get("previous_interaction_id", ""),
-            )
-            start_text = (
-                f"deep research started: interaction_id={start.interaction_id} "
-                f"status={start.status}; call deep_research_result with this "
-                f"interaction_id to check progress"
-            )
-            return [types.TextContent(type="text", text=start_text)], start.to_structured()
-
-        if research is not None and name == RESEARCH_RESULT_TOOL_NAME:
-            result = await research.result(
-                arguments["interaction_id"],
-                wait_seconds=arguments.get("wait_seconds", 0),
-            )
-            if result.status == "completed":
-                result_text = result.text
-            else:
-                result_text = (
-                    f"deep research {result.interaction_id} is {result.status}; "
-                    f"call deep_research_result again with this interaction_id to check progress"
+            case ToolName.DEEP_RESEARCH:
+                start = await research.start(
+                    arguments["query"],
+                    plan_only=arguments.get("plan_only", False),
+                    previous_interaction_id=arguments.get("previous_interaction_id", ""),
+                    agent=arguments.get("agent", ""),
                 )
-            return [types.TextContent(type="text", text=result_text)], result.to_structured()
+                start_text = (
+                    f"deep research started: interaction_id={start.interaction_id} "
+                    f"status={start.status}; call deep_research_result with this "
+                    f"interaction_id to check progress"
+                )
+                return [types.TextContent(type="text", text=start_text)], start.to_structured()
 
-        raise ValueError(f"Unknown tool: {name}")
+            case ToolName.DEEP_RESEARCH_RESULT:
+                result = await research.result(
+                    arguments["interaction_id"],
+                    wait_seconds=arguments.get("wait_seconds", 0),
+                )
+                if result.status == "completed":
+                    result_text = result.text
+                else:
+                    result_text = (
+                        f"deep research {result.interaction_id} is {result.status}; "
+                        f"call deep_research_result again with this interaction_id to check progress"
+                    )
+                return [types.TextContent(type="text", text=result_text)], result.to_structured()
+
+            case _:
+                raise ValueError(f"Unknown tool: {name}")
 
     return server

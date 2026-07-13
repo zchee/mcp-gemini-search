@@ -32,6 +32,8 @@ from mcp.shared.memory import create_client_server_memory_streams
 from mcp_gemini_search import __version__
 from mcp_gemini_search.config import DEFAULT_MODEL
 from mcp_gemini_search.research import (
+    DEEP_RESEARCH_AGENT,
+    DEEP_RESEARCH_MAX_AGENT,
     DeepResearchResult,
     DeepResearchService,
     DeepResearchStart,
@@ -77,7 +79,7 @@ class _StubResearchService(DeepResearchService):
         result: DeepResearchResult | None = None,
         error: Exception | None = None,
     ) -> None:
-        super().__init__(agent="deep-research-preview-04-2026", interactions=None)
+        super().__init__(agent=DEEP_RESEARCH_AGENT, interactions=None)
         self._start = start or DeepResearchStart(interaction_id="dr-1", status="in_progress")
         self._result = result or DeepResearchResult(
             interaction_id="dr-1",
@@ -86,6 +88,7 @@ class _StubResearchService(DeepResearchService):
             sources=(GoogleSearchSource(index=1, title="Src", uri="https://s.example"),),
         )
         self._error = error
+        self.start_calls: list[dict[str, Any]] = []
 
     async def start(
         self,
@@ -93,7 +96,14 @@ class _StubResearchService(DeepResearchService):
         *,
         plan_only: bool = False,
         previous_interaction_id: str = "",
+        agent: str = "",
     ) -> DeepResearchStart:
+        self.start_calls.append({
+            "query": query,
+            "plan_only": plan_only,
+            "previous_interaction_id": previous_interaction_id,
+            "agent": agent,
+        })
         if self._error is not None:
             raise self._error
         return self._start
@@ -122,7 +132,8 @@ async def _session(
     research: DeepResearchService | None = None,
 ) -> AsyncGenerator[tuple[ClientSession, types.InitializeResult]]:
     """Yield a client session connected to the server, initialized at 2025-06-18."""
-    server = create_server(service, research)
+    research_service = research if research is not None else _StubResearchService()
+    server = create_server(service, research_service)
     async with create_client_server_memory_streams() as (
         client_streams,
         server_streams,
@@ -175,20 +186,6 @@ async def test_initialize_negotiates_golden_protocol_and_server_info() -> None:
         assert init.capabilities.tools is not None
 
 
-async def test_tools_list_matches_golden_structure() -> None:
-    """tools/list matches the Go golden schemas structurally."""
-    golden_tool = _load_golden("tools_list.json")["result"]["tools"][0]
-    async with _session(_StubService(_GROUNDED_OUTPUT)) as (session, _init):
-        result = await session.list_tools()
-
-    assert len(result.tools) == 1
-    tool = result.tools[0]
-    assert tool.name == golden_tool["name"]
-    assert tool.description == golden_tool["description"]
-    assert tool.inputSchema == golden_tool["inputSchema"]
-    assert tool.outputSchema == golden_tool["outputSchema"]
-
-
 async def test_call_tool_returns_grounded_text_and_structured_content() -> None:
     """tools/call returns grounded text content plus structuredContent."""
     async with _session(_StubService(_GROUNDED_OUTPUT)) as (session, _init):
@@ -217,7 +214,7 @@ async def test_call_tool_empty_query_returns_is_error() -> None:
 
 
 async def test_call_tool_unknown_name_returns_is_error() -> None:
-    """A tool name other than google_search is rejected without searching."""
+    """A name other than the three advertised tools is rejected."""
     async with _session(_StubService(_GROUNDED_OUTPUT)) as (session, _init):
         result = await session.call_tool("nonexistent_tool", {"query": "x"})
 
@@ -227,21 +224,10 @@ async def test_call_tool_unknown_name_returns_is_error() -> None:
     assert block.text == "Unknown tool: nonexistent_tool"
 
 
-async def test_tools_list_without_research_is_single_tool() -> None:
-    """Without a research service, list_tools returns only google_search."""
+async def test_tools_list_returns_three_tools() -> None:
+    """list_tools returns all three standard tools in golden order."""
+    golden_tools = _load_golden("tools_list.json")["result"]["tools"]
     async with _session(_StubService(_GROUNDED_OUTPUT)) as (session, _init):
-        result = await session.list_tools()
-
-    assert [tool.name for tool in result.tools] == ["google_search"]
-
-
-async def test_tools_list_with_research_returns_three_tools() -> None:
-    """With a research service, list_tools returns google_search then the two research tools."""
-    golden_tools = _load_golden("tools_list_deep_research.json")["result"]["tools"]
-    async with _session(_StubService(_GROUNDED_OUTPUT), research=_StubResearchService()) as (
-        session,
-        _init,
-    ):
         result = await session.list_tools()
 
     assert len(result.tools) == 3
@@ -270,6 +256,43 @@ async def test_call_deep_research_returns_start_text_and_structured() -> None:
     assert "dr-99" in block.text
     assert "in_progress" in block.text
     assert result.structuredContent == start.to_structured()
+
+
+async def test_call_deep_research_passes_agent_override() -> None:
+    """deep_research passes an explicit per-request agent through to the service."""
+    research = _StubResearchService()
+    async with _session(_StubService(_GROUNDED_OUTPUT), research=research) as (session, _init):
+        result = await session.call_tool(
+            "deep_research",
+            {"query": "topic", "agent": DEEP_RESEARCH_MAX_AGENT},
+        )
+
+    assert not result.isError
+    assert research.start_calls == [
+        {
+            "query": "topic",
+            "plan_only": False,
+            "previous_interaction_id": "",
+            "agent": DEEP_RESEARCH_MAX_AGENT,
+        }
+    ]
+
+
+async def test_call_deep_research_defaults_agent_override_to_empty() -> None:
+    """deep_research passes an empty agent override when the argument is omitted."""
+    research = _StubResearchService()
+    async with _session(_StubService(_GROUNDED_OUTPUT), research=research) as (session, _init):
+        result = await session.call_tool("deep_research", {"query": "topic"})
+
+    assert not result.isError
+    assert research.start_calls == [
+        {
+            "query": "topic",
+            "plan_only": False,
+            "previous_interaction_id": "",
+            "agent": "",
+        }
+    ]
 
 
 async def test_call_deep_research_result_returns_report() -> None:
@@ -316,17 +339,3 @@ async def test_call_deep_research_runtime_error_returns_is_error() -> None:
     block = result.content[0]
     assert isinstance(block, types.TextContent)
     assert block.text == "deep research failed: boom"
-
-
-async def test_call_tool_unknown_name_with_research_returns_is_error() -> None:
-    """Unknown tool names are rejected even when deep research tools are enabled."""
-    async with _session(_StubService(_GROUNDED_OUTPUT), research=_StubResearchService()) as (
-        session,
-        _init,
-    ):
-        result = await session.call_tool("nonexistent_tool", {"query": "x"})
-
-    assert result.isError
-    block = result.content[0]
-    assert isinstance(block, types.TextContent)
-    assert block.text == "Unknown tool: nonexistent_tool"

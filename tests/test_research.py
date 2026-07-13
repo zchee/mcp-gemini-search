@@ -98,7 +98,7 @@ def _interaction(
 
 
 def _golden_research_schemas() -> tuple[dict[str, Any], dict[str, Any]]:
-    path = Path(__file__).parent / "golden" / "tools_list_deep_research.json"
+    path = Path(__file__).parent / "golden" / "tools_list.json"
     data = orjson.loads(path.read_text(encoding="utf-8"))
     tools = data["result"]["tools"]
     by_name = {tool["name"]: tool for tool in tools}
@@ -140,6 +140,38 @@ async def test_start_plan_only_and_previous_interaction() -> None:
         "background": True,
         "agent_config": {"type": "deep-research", "collaborative_planning": True},
         "previous_interaction_id": "i-1",
+    }
+
+
+@pytest.mark.parametrize(
+    ("agent", "expected_agent"),
+    [
+        (research_mod.DEEP_RESEARCH_MAX_AGENT, research_mod.DEEP_RESEARCH_MAX_AGENT),
+        (None, research_mod.DEEP_RESEARCH_AGENT),
+        ("", research_mod.DEEP_RESEARCH_AGENT),
+    ],
+    ids=["override", "omitted", "empty"],
+)
+@pytest.mark.anyio
+async def test_start_agent_override(
+    agent: str | None,
+    expected_agent: str,
+) -> None:
+    """A non-empty request agent overrides the configured agent; empty values fall back."""
+    stub = StubInteractions(
+        create_response=_interaction(status="in_progress", interaction_id="dr-agent"),
+    )
+    svc = DeepResearchService(research_mod.DEEP_RESEARCH_AGENT, stub)
+
+    if agent is None:
+        await svc.start("q")
+    else:
+        await svc.start("q", agent=agent)
+
+    assert stub.create_kwargs == {
+        "agent": expected_agent,
+        "input": "q",
+        "background": True,
     }
 
 

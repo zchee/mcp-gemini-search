@@ -6,7 +6,7 @@ This repository ports the behavior of [`yukukotani/mcp-gemini-google-search`](ht
 
 ## Features
 
-- Exposes `google_search` by default, with opt-in `deep_research` and `deep_research_result` tools
+- Exposes `google_search`, `deep_research`, and `deep_research_result` as standard tools
 - Uses Gemini's built-in Google Search grounding tool through the [Interactions API](https://ai.google.dev/gemini-api/docs/interactions) (`client.interactions.create`), currently in Beta
 - Optionally enables the built-in [URL context](https://ai.google.dev/gemini-api/docs/interactions/url-context) and [code execution](https://ai.google.dev/gemini-api/docs/interactions/code-execution) tools alongside search grounding
 - Stateless by design: every search is a single-shot interaction sent with `store=false`, so requests are never retained as server-side interaction history
@@ -88,12 +88,6 @@ mcp-gemini-search -logpath /tmp/mcp-gemini-search.log
 
 ## Deep Research
 
-Gemini Deep Research is disabled by default. Enable the two Deep Research tools with:
-
-```bash
-export GEMINI_ENABLE_DEEP_RESEARCH="1"
-```
-
 The server uses `deep-research-preview-04-2026` by default. Select the more exhaustive Max variant with:
 
 ```bash
@@ -139,13 +133,14 @@ Output:
 
 ### `deep_research`
 
-Starts a billed background Deep Research run and returns immediately. Available only when `GEMINI_ENABLE_DEEP_RESEARCH=1`.
+Starts a billed background Deep Research run and returns immediately.
 
 Parameters:
 
 - `query` (string, required): The research question.
 - `plan_only` (boolean, optional): Request a collaborative research plan instead of executing it. Defaults to `false`.
 - `previous_interaction_id` (string, optional): Continue, refine, or approve a prior Deep Research interaction.
+- `agent` (string, optional): Override the server-configured agent for this call only with `deep-research-preview-04-2026` (faster and the default) or `deep-research-max-preview-04-2026` (more comprehensive). When omitted, the server-configured agent is used.
 
 Output:
 
@@ -190,8 +185,8 @@ uv run pytest -m benchmark --benchmark-only
 RUN_LIVE_API=1 GEMINI_API_KEY="your-api-key" uv run pytest -m live
 
 # Live Deep Research start/poll/cancel smoke test
-RUN_LIVE_API=1 GEMINI_API_KEY="your-api-key" GEMINI_ENABLE_DEEP_RESEARCH=1 uv run pytest -m live
+RUN_LIVE_API=1 GEMINI_API_KEY="your-api-key" uv run pytest -m live
 
-# Full multi-minute Deep Research run (explicit billed opt-in)
-RUN_SLOW=1 RUN_LIVE_API=1 GEMINI_API_KEY="your-api-key" GEMINI_ENABLE_DEEP_RESEARCH=1 uv run pytest -m "live and slow"
+# Full multi-minute Deep Research run (explicit billed run)
+RUN_SLOW=1 RUN_LIVE_API=1 GEMINI_API_KEY="your-api-key" uv run pytest -m "live and slow"
 ```

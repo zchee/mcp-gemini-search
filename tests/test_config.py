@@ -19,13 +19,11 @@ import os
 import pytest
 
 from mcp_gemini_search.config import (
-    DEFAULT_DEEP_RESEARCH_AGENT,
     DEFAULT_LOCATION,
     DEFAULT_MODEL,
     ENV_GEMINI_API_KEY,
     ENV_GEMINI_DEEP_RESEARCH_AGENT,
     ENV_GEMINI_ENABLE_CODE_EXECUTION,
-    ENV_GEMINI_ENABLE_DEEP_RESEARCH,
     ENV_GEMINI_ENABLE_URL_CONTEXT,
     ENV_GEMINI_MODEL,
     ENV_GOOGLE_API_KEY,
@@ -114,50 +112,13 @@ from mcp_gemini_search.config import (
             ServerConfig(model=DEFAULT_MODEL, api_key="test-key"),
         ),
         (
-            {ENV_GOOGLE_API_KEY: "test-key"},
-            ServerConfig(
-                model=DEFAULT_MODEL,
-                api_key="test-key",
-                deep_research=False,
-                deep_research_agent=DEFAULT_DEEP_RESEARCH_AGENT,
-            ),
-        ),
-        (
-            {
-                ENV_GOOGLE_CLOUD_PROJECT: "project-1",
-                ENV_GOOGLE_GENAI_USE_VERTEXAI: "true",
-            },
-            ServerConfig(
-                model=DEFAULT_MODEL,
-                vertexai=True,
-                project="project-1",
-                location=DEFAULT_LOCATION,
-                deep_research=False,
-                deep_research_agent=DEFAULT_DEEP_RESEARCH_AGENT,
-            ),
-        ),
-        (
             {
                 ENV_GOOGLE_API_KEY: "test-key",
-                ENV_GEMINI_ENABLE_DEEP_RESEARCH: "1",
-            },
-            ServerConfig(
-                model=DEFAULT_MODEL,
-                api_key="test-key",
-                deep_research=True,
-                deep_research_agent=DEFAULT_DEEP_RESEARCH_AGENT,
-            ),
-        ),
-        (
-            {
-                ENV_GOOGLE_API_KEY: "test-key",
-                ENV_GEMINI_ENABLE_DEEP_RESEARCH: "true",
                 ENV_GEMINI_DEEP_RESEARCH_AGENT: "deep-research-max-preview-04-2026",
             },
             ServerConfig(
                 model=DEFAULT_MODEL,
                 api_key="test-key",
-                deep_research=True,
                 deep_research_agent="deep-research-max-preview-04-2026",
             ),
         ),
@@ -165,22 +126,6 @@ from mcp_gemini_search.config import (
             {
                 ENV_GOOGLE_CLOUD_PROJECT: "project-1",
                 ENV_GOOGLE_GENAI_USE_VERTEXAI: "true",
-                ENV_GEMINI_ENABLE_DEEP_RESEARCH: "yes",
-            },
-            ServerConfig(
-                model=DEFAULT_MODEL,
-                vertexai=True,
-                project="project-1",
-                location=DEFAULT_LOCATION,
-                deep_research=True,
-                deep_research_agent=DEFAULT_DEEP_RESEARCH_AGENT,
-            ),
-        ),
-        (
-            {
-                ENV_GOOGLE_CLOUD_PROJECT: "project-1",
-                ENV_GOOGLE_GENAI_USE_VERTEXAI: "true",
-                ENV_GEMINI_ENABLE_DEEP_RESEARCH: "on",
                 ENV_GEMINI_DEEP_RESEARCH_AGENT: "deep-research-max-preview-04-2026",
             },
             ServerConfig(
@@ -188,7 +133,6 @@ from mcp_gemini_search.config import (
                 vertexai=True,
                 project="project-1",
                 location=DEFAULT_LOCATION,
-                deep_research=True,
                 deep_research_agent="deep-research-max-preview-04-2026",
             ),
         ),
@@ -201,11 +145,7 @@ from mcp_gemini_search.config import (
         "optional tools enabled",
         "vertex optional code execution",
         "optional tools falsy values stay disabled",
-        "ai studio deep research off by default",
-        "vertex deep research off by default",
-        "ai studio deep research enabled default agent",
         "ai studio deep research max agent",
-        "vertex deep research enabled default agent",
         "vertex deep research max agent",
     ],
 )

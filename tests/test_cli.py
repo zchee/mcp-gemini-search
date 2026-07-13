@@ -25,7 +25,6 @@ from mcp_gemini_search.config import (
     DEFAULT_DEEP_RESEARCH_AGENT,
     ENV_GEMINI_API_KEY,
     ENV_GEMINI_DEEP_RESEARCH_AGENT,
-    ENV_GEMINI_ENABLE_DEEP_RESEARCH,
     ENV_GOOGLE_API_KEY,
     ENV_GOOGLE_CLOUD_PROJECT,
     ENV_GOOGLE_GENAI_USE_VERTEXAI,
@@ -41,32 +40,27 @@ def test_backend_options_enable_uvloop() -> None:
 
 
 @pytest.mark.parametrize(
-    ("enabled", "agent", "want_agent"),
+    ("agent", "want_agent"),
     [
-        (False, "", ""),
-        (True, "", DEFAULT_DEEP_RESEARCH_AGENT),
-        (True, "deep-research-max-preview-04-2026", "deep-research-max-preview-04-2026"),
+        ("", DEFAULT_DEEP_RESEARCH_AGENT),
+        ("deep-research-max-preview-04-2026", "deep-research-max-preview-04-2026"),
     ],
-    ids=["disabled", "enabled default agent", "enabled max agent"],
+    ids=["default agent", "max agent"],
 )
-def test_run_wires_optional_deep_research_service(
+def test_run_wires_deep_research_service_agent(
     monkeypatch: pytest.MonkeyPatch,
-    enabled: bool,
     agent: str,
     want_agent: str,
 ) -> None:
-    """The CLI constructs Deep Research only when enabled and passes through its agent."""
+    """The CLI always constructs Deep Research with the configured agent."""
     for key in (
         ENV_GOOGLE_API_KEY,
         ENV_GOOGLE_CLOUD_PROJECT,
         ENV_GOOGLE_GENAI_USE_VERTEXAI,
-        ENV_GEMINI_ENABLE_DEEP_RESEARCH,
         ENV_GEMINI_DEEP_RESEARCH_AGENT,
     ):
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv(ENV_GEMINI_API_KEY, "dummy")
-    if enabled:
-        monkeypatch.setenv(ENV_GEMINI_ENABLE_DEEP_RESEARCH, "1")
     if agent:
         monkeypatch.setenv(ENV_GEMINI_DEEP_RESEARCH_AGENT, agent)
 
@@ -76,7 +70,7 @@ def test_run_wires_optional_deep_research_service(
 
     def fake_create_server(
         service: GoogleSearchService,
-        research: DeepResearchService | None = None,
+        research: DeepResearchService,
     ) -> object:
         created["service"] = service
         created["research"] = research
@@ -94,11 +88,8 @@ def test_run_wires_optional_deep_research_service(
 
     assert isinstance(created["service"], GoogleSearchService)
     research = created["research"]
-    if enabled:
-        assert isinstance(research, DeepResearchService)
-        assert research._agent == want_agent
-    else:
-        assert research is None
+    assert isinstance(research, DeepResearchService)
+    assert research._agent == want_agent
     assert run_call["func"] is cli._serve
     assert run_call["args"] == (sentinel, "")
     kwargs = run_call["kwargs"]

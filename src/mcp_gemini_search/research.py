@@ -33,6 +33,8 @@ from mcp_gemini_search.search import (
 
 _TERMINAL_STATUSES = frozenset({"completed", "failed", "cancelled"})
 _MAX_WAIT_SECONDS = 60
+DEEP_RESEARCH_AGENT = "deep-research-preview-04-2026"
+DEEP_RESEARCH_MAX_AGENT = "deep-research-max-preview-04-2026"
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,8 +133,15 @@ class DeepResearchService:
         *,
         plan_only: bool = False,
         previous_interaction_id: str = "",
+        agent: str = "",
     ) -> DeepResearchStart:
         """Start a background Deep Research run and return its interaction id.
+
+        Args:
+            query: The research question or topic to investigate.
+            plan_only: Whether to request a collaborative research plan only.
+            previous_interaction_id: A prior interaction to continue or refine.
+            agent: A per-request agent override, or empty to use the configured agent.
 
         Raises:
             RuntimeError: If the service is not configured, if the backend call
@@ -145,7 +154,7 @@ class DeepResearchService:
             raise ValueError("research query cannot be empty")
 
         body: dict[str, Any] = {
-            "agent": self._agent,
+            "agent": agent or self._agent,
             "input": query,
             "background": True,
         }

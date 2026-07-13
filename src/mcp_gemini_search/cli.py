@@ -94,23 +94,18 @@ def _run(logpath: str) -> None:
             url_context=config.url_context,
             code_execution=config.code_execution,
         )
-        research = None
-        if config.deep_research:
-            research = DeepResearchService(
-                agent=config.deep_research_agent,
-                interactions=client.aio.interactions,
-            )
+        research = DeepResearchService(
+            agent=config.deep_research_agent,
+            interactions=client.aio.interactions,
+        )
         server = create_server(service, research)
 
         tools_msg = ", ".join(tool["type"] for tool in service.tools)
-        if config.deep_research:
-            _logging.logger.info(
-                "gemini interactions tools: %s; deep research agent: %s",
-                tools_msg,
-                config.deep_research_agent,
-            )
-        else:
-            _logging.logger.info("gemini interactions tools: %s", tools_msg)
+        _logging.logger.info(
+            "gemini interactions tools: %s; deep research agent: %s",
+            tools_msg,
+            config.deep_research_agent,
+        )
         _logging.logger.info(_STARTUP_MESSAGE)
         try:
             anyio.run(_serve, server, logpath, backend_options=_backend_options())
