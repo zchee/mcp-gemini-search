@@ -96,7 +96,7 @@ def setup_logging(logpath: str) -> TextIO | None:
         fd = os.open(logpath, os.O_RDWR | os.O_CREAT, 0o666)
     except OSError as e:
         raise RuntimeError(f'open "{logpath}" file: {e}') from e
-    handle: TextIO = os.fdopen(fd, "w", encoding="utf-8")
+    handle: TextIO = os.fdopen(fd, "r+", encoding="utf-8")
 
     handler = logging.StreamHandler(handle)
     handler.setLevel(logging.DEBUG)

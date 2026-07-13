@@ -169,3 +169,14 @@ async def test_call_tool_empty_query_returns_is_error() -> None:
     block = result.content[0]
     assert isinstance(block, types.TextContent)
     assert block.text == "search query cannot be empty"
+
+
+async def test_call_tool_unknown_name_returns_is_error() -> None:
+    """A tool name other than google_search is rejected without searching."""
+    async with _session(_StubService(_GROUNDED_OUTPUT)) as (session, _init):
+        result = await session.call_tool("nonexistent_tool", {"query": "x"})
+
+    assert result.isError
+    block = result.content[0]
+    assert isinstance(block, types.TextContent)
+    assert block.text == "Unknown tool: nonexistent_tool"

@@ -121,6 +121,8 @@ def create_server(service: GoogleSearchService) -> Server:
 
     @server.call_tool()
     async def call_tool(name: str, arguments: dict[str, Any]) -> tuple[list[types.ContentBlock], dict[str, Any]]:
+        if name != TOOL_NAME:
+            raise ValueError(f"Unknown tool: {name}")
         output = await service.search(arguments["query"])
         content: list[types.ContentBlock] = [types.TextContent(type="text", text=output.text)]
         return content, output.to_structured()

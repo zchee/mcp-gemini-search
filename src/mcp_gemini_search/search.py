@@ -208,13 +208,15 @@ def _insert_citations(
     part_count = len(parts)
     part_offsets = [0] * part_count
     part_has_text = [False] * part_count
+    part_lengths = [0] * part_count
     total_length = 0
     for idx, part in enumerate(parts):
         if part.thought or not part.text:
             continue
         part_has_text[idx] = True
         part_offsets[idx] = total_length
-        total_length += len(part.text.encode("utf-8"))
+        part_lengths[idx] = len(part.text.encode("utf-8"))
+        total_length += part_lengths[idx]
 
     insertions: list[tuple[int, int]] = []
     for support in supports:
@@ -228,9 +230,8 @@ def _insert_citations(
             continue
 
         base_offset = part_offsets[part_index]
-        part_text = parts[part_index].text or ""
         end_index = segment.end_index or 0
-        if end_index < 0 or end_index > len(part_text.encode("utf-8")):
+        if end_index < 0 or end_index > part_lengths[part_index]:
             continue
 
         global_offset = base_offset + end_index
