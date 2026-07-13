@@ -20,6 +20,8 @@ import re
 
 import mdformat
 
+from mcp_gemini_search._logging import logger
+
 _MDFORMAT_OPTIONS: dict[str, bool] = {"number": True}
 _MDFORMAT_EXTENSIONS = frozenset({"gfm"})
 
@@ -42,9 +44,10 @@ def format_document(text: str) -> str:
     and consecutive ordered-list numbering, then strips the trailing newline
     mdformat guarantees so the result behaves like a plain text field.
 
-    Returns the raw text unformatted when markdown-it's recursive-descent
-    parser overflows on pathological input (e.g. thousands of nested emphasis
-    markers), so one degenerate grounding result cannot fail the tool call.
+    Normalization is cosmetic, so any mdformat or plugin failure — e.g.
+    markdown-it's recursive-descent parser overflowing on thousands of nested
+    emphasis markers — logs a warning and returns the raw text unformatted
+    instead of failing the tool call.
 
     The input is fed to mdformat with a guaranteed trailing newline: without
     one, mdformat glues the closing fence of an unterminated code block onto
@@ -52,7 +55,8 @@ def format_document(text: str) -> str:
     """
     try:
         return mdformat.text(f"{text}\n", options=_MDFORMAT_OPTIONS, extensions=_MDFORMAT_EXTENSIONS).rstrip("\n")
-    except RecursionError:
+    except Exception as e:
+        logger.warning("markdown normalization failed, returning unformatted text: %r", e)
         return text.rstrip("\n")
 
 

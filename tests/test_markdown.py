@@ -14,6 +14,9 @@
 
 """Tests for the Markdown rendering helpers."""
 
+import logging
+
+import mdformat
 import pytest
 
 from mcp_gemini_search._markdown import (
@@ -90,6 +93,21 @@ def test_format_document_falls_back_on_pathological_input() -> None:
     """Deeply nested emphasis falls back to the raw text instead of raising."""
     src = "*" * 2000 + "a" + "*" * 2000
     assert format_document(src) == src
+
+
+def test_format_document_falls_back_on_any_mdformat_failure(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Any mdformat failure logs a warning and falls back to the raw text."""
+
+    def boom(*args: object, **kwargs: object) -> str:
+        raise ValueError("plugin exploded")
+
+    monkeypatch.setattr(mdformat, "text", boom)
+    with caplog.at_level(logging.WARNING, logger="mcp_gemini_search"):
+        assert format_document("hello\n") == "hello"
+    assert "markdown normalization failed" in caplog.text
+    assert "plugin exploded" in caplog.text
 
 
 def test_format_document_closes_dangling_code_fence() -> None:
