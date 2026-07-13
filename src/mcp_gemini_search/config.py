@@ -27,6 +27,8 @@ ENV_GEMINI_API_KEY = "GEMINI_API_KEY"
 ENV_GOOGLE_CLOUD_PROJECT = "GOOGLE_CLOUD_PROJECT"
 ENV_GOOGLE_CLOUD_LOCATION = "GOOGLE_CLOUD_LOCATION"
 ENV_GOOGLE_GENAI_USE_VERTEXAI = "GOOGLE_GENAI_USE_VERTEXAI"
+ENV_GEMINI_ENABLE_URL_CONTEXT = "GEMINI_ENABLE_URL_CONTEXT"
+ENV_GEMINI_ENABLE_CODE_EXECUTION = "GEMINI_ENABLE_CODE_EXECUTION"
 
 DEFAULT_MODEL = "gemini-3.1-pro-preview"
 DEFAULT_LOCATION = "global"
@@ -41,6 +43,8 @@ class ServerConfig:
     api_key: str = ""
     project: str = ""
     location: str = ""
+    url_context: bool = False
+    code_execution: bool = False
 
     def new_client(self) -> genai.Client:
         """Create a new genai.Client based on the server configuration."""
@@ -55,6 +59,8 @@ class ServerConfig:
 def load_config_from_env(getenv: Callable[[str], str]) -> ServerConfig:
     """Resolve the server configuration from environment variable lookups."""
     model = getenv(ENV_GEMINI_MODEL).strip() or DEFAULT_MODEL
+    url_context = _is_enabled(getenv(ENV_GEMINI_ENABLE_URL_CONTEXT))
+    code_execution = _is_enabled(getenv(ENV_GEMINI_ENABLE_CODE_EXECUTION))
 
     if _is_enabled(getenv(ENV_GOOGLE_GENAI_USE_VERTEXAI)):
         project = getenv(ENV_GOOGLE_CLOUD_PROJECT)
@@ -68,6 +74,8 @@ def load_config_from_env(getenv: Callable[[str], str]) -> ServerConfig:
             vertexai=True,
             project=project,
             location=location,
+            url_context=url_context,
+            code_execution=code_execution,
         )
 
     api_key = _first_non_empty(
@@ -79,7 +87,12 @@ def load_config_from_env(getenv: Callable[[str], str]) -> ServerConfig:
             f'"{ENV_GOOGLE_API_KEY}" or "{ENV_GEMINI_API_KEY}" environment '
             "variable is required when using Google AI Studio"
         )
-    return ServerConfig(model=model, api_key=api_key)
+    return ServerConfig(
+        model=model,
+        api_key=api_key,
+        url_context=url_context,
+        code_execution=code_execution,
+    )
 
 
 def _first_non_empty(*values: str) -> str:

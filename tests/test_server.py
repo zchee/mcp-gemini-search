@@ -55,7 +55,7 @@ class _StubService(GoogleSearchService):
     """A service that returns a fixed grounded output for any query."""
 
     def __init__(self, output: GoogleSearchOutput) -> None:
-        super().__init__(model=DEFAULT_MODEL, generator=None)
+        super().__init__(model=DEFAULT_MODEL, interactions=None)
         self._output = output
 
     async def search(self, query: str) -> GoogleSearchOutput:
@@ -162,7 +162,7 @@ async def test_call_tool_returns_grounded_text_and_structured_content() -> None:
 async def test_call_tool_empty_query_returns_is_error() -> None:
     """A blank query yields isError with the exact message."""
     client = genai.Client(api_key="dummy")
-    service = GoogleSearchService(model=DEFAULT_MODEL, generator=client.aio.models)
+    service = GoogleSearchService(model=DEFAULT_MODEL, interactions=client.aio.interactions)
     async with _session(service) as (session, _init):
         result = await session.call_tool("google_search", {"query": "  "})
 

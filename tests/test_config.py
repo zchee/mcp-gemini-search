@@ -22,6 +22,8 @@ from mcp_gemini_search.config import (
     DEFAULT_LOCATION,
     DEFAULT_MODEL,
     ENV_GEMINI_API_KEY,
+    ENV_GEMINI_ENABLE_CODE_EXECUTION,
+    ENV_GEMINI_ENABLE_URL_CONTEXT,
     ENV_GEMINI_MODEL,
     ENV_GOOGLE_API_KEY,
     ENV_GOOGLE_CLOUD_LOCATION,
@@ -73,12 +75,50 @@ from mcp_gemini_search.config import (
                 location="asia-northeast1",
             ),
         ),
+        (
+            {
+                ENV_GOOGLE_API_KEY: "test-key",
+                ENV_GEMINI_ENABLE_URL_CONTEXT: "1",
+                ENV_GEMINI_ENABLE_CODE_EXECUTION: "true",
+            },
+            ServerConfig(
+                model=DEFAULT_MODEL,
+                api_key="test-key",
+                url_context=True,
+                code_execution=True,
+            ),
+        ),
+        (
+            {
+                ENV_GOOGLE_CLOUD_PROJECT: "project-1",
+                ENV_GOOGLE_GENAI_USE_VERTEXAI: "true",
+                ENV_GEMINI_ENABLE_CODE_EXECUTION: "on",
+            },
+            ServerConfig(
+                model=DEFAULT_MODEL,
+                vertexai=True,
+                project="project-1",
+                location=DEFAULT_LOCATION,
+                code_execution=True,
+            ),
+        ),
+        (
+            {
+                ENV_GOOGLE_API_KEY: "test-key",
+                ENV_GEMINI_ENABLE_URL_CONTEXT: "0",
+                ENV_GEMINI_ENABLE_CODE_EXECUTION: "off",
+            },
+            ServerConfig(model=DEFAULT_MODEL, api_key="test-key"),
+        ),
     ],
     ids=[
         "google api key",
         "gemini api key fallback and custom model",
         "vertex provider compatibility env",
         "vertex native go sdk env fallback",
+        "optional tools enabled",
+        "vertex optional code execution",
+        "optional tools falsy values stay disabled",
     ],
 )
 def test_load_config_from_env(env: dict[str, str], want: ServerConfig) -> None:

@@ -7,7 +7,9 @@ This repository ports the behavior of [`yukukotani/mcp-gemini-google-search`](ht
 ## Features
 
 - Exposes a single MCP tool: `google_search`
-- Uses Gemini's built-in Google Search grounding tool
+- Uses Gemini's built-in Google Search grounding tool through the [Interactions API](https://ai.google.dev/gemini-api/docs/interactions) (`client.interactions.create`), currently in Beta
+- Optionally enables the built-in [URL context](https://ai.google.dev/gemini-api/docs/interactions/url-context) and [code execution](https://ai.google.dev/gemini-api/docs/interactions/code-execution) tools alongside search grounding
+- Stateless by design: every search is a single-shot interaction sent with `store=false`, so requests are never retained as server-side interaction history
 - Returns the grounded response as clean Markdown: inline `[n]` citation markers plus a linked, ordered source list under a `## Sources` heading, normalized with [`mdformat`](https://github.com/hukkin/mdformat) (GitHub-flavored Markdown)
 - Supports both Google AI Studio and Vertex AI
 
@@ -58,6 +60,17 @@ export GEMINI_MODEL="gemini-3.1-pro-preview"     # optional
 `GOOGLE_GENAI_USE_VERTEXAI` is treated as enabled when set to one of `1`, `true`, `yes`, or `on` (case-insensitive). `GOOGLE_CLOUD_PROJECT` is required in this mode.
 
 If no model is configured, the server defaults to `gemini-3.1-pro-preview`.
+
+### Optional built-in tools
+
+The Gemini `url_context` and `code_execution` built-in tools can be enabled alongside Google Search grounding. Both are disabled by default:
+
+```bash
+export GEMINI_ENABLE_URL_CONTEXT="1"    # let the model fetch URLs mentioned in the query
+export GEMINI_ENABLE_CODE_EXECUTION="1" # let the model run Python for computational answers
+```
+
+Both flags accept the same truthy spellings as `GOOGLE_GENAI_USE_VERTEXAI` (`1`, `true`, `yes`, `on`; case-insensitive). Enabled tools can increase token usage, and on Gemini 3 models Google Search grounding is billed per executed search query.
 
 ## Usage
 

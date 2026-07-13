@@ -18,93 +18,87 @@ Ported from ``search_bench_test.go``. Marked ``benchmark`` so they are
 deselected by default and run serially with ``-m benchmark``.
 """
 
+from collections.abc import Mapping, Sequence
+
 import anyio
 import pytest
-from google.genai import types
+from google.genai import interactions
 from pytest_benchmark.fixture import BenchmarkFixture
 
 from mcp_gemini_search.search import (
     GoogleSearchService,
-    format_grounded_response,
+    format_interaction,
 )
 
 
-def _benchmark_response() -> types.GenerateContentResponse:
-    return types.GenerateContentResponse(
-        candidates=[
-            types.Candidate(
-                content=types.Content(
-                    role="model",
-                    parts=[
-                        types.Part(text="Alpha "),
-                        types.Part(text="Beta "),
-                        types.Part(text="Gamma Delta Epsilon Zeta Eta Theta"),
-                    ],
-                ),
-                grounding_metadata=types.GroundingMetadata(
-                    grounding_chunks=[
-                        types.GroundingChunk(web=types.GroundingChunkWeb(title="First", uri="https://first.example")),
-                        types.GroundingChunk(
-                            maps=types.GroundingChunkMaps(title="Second", uri="https://second.example")
-                        ),
-                        types.GroundingChunk(
-                            retrieved_context=types.GroundingChunkRetrievedContext(
-                                title="Third", uri="https://third.example"
-                            )
-                        ),
-                        types.GroundingChunk(
-                            image=types.GroundingChunkImage(title="Fourth", source_uri="https://fourth.example")
-                        ),
-                    ],
-                    grounding_supports=[
-                        _support(0, 6, [0]),
-                        _support(1, 5, [0, 1]),
-                        _support(2, 5, [2]),
-                        _support(2, 13, [1, 2, 3]),
-                        _support(2, 21, [3]),
-                        _support(2, 26, [0, 3]),
-                        _support(2, 30, [1]),
-                        _support(2, 39, [0, 2, 3]),
-                    ],
-                ),
+def _cite(url: str, title: str, end_index: int) -> interactions.URLCitation:
+    return interactions.URLCitation(url=url, title=title, start_index=0, end_index=end_index)
+
+
+def _benchmark_interaction() -> interactions.Interaction:
+    first = _cite("https://first.example", "First", 6)
+    return interactions.Interaction(
+        status="completed",
+        steps=[
+            interactions.ModelOutputStep(
+                content=[
+                    interactions.TextContent(text="Alpha ", annotations=[first]),
+                    interactions.TextContent(
+                        text="Beta ",
+                        annotations=[
+                            _cite("https://first.example", "First", 5),
+                            _cite("https://second.example", "Second", 5),
+                        ],
+                    ),
+                    interactions.TextContent(
+                        text="Gamma Delta Epsilon Zeta Eta Theta",
+                        annotations=[
+                            _cite("https://third.example", "Third", 5),
+                            _cite("https://second.example", "Second", 13),
+                            _cite("https://third.example", "Third", 13),
+                            _cite("https://fourth.example", "Fourth", 13),
+                            _cite("https://fourth.example", "Fourth", 21),
+                            _cite("https://first.example", "First", 26),
+                            _cite("https://fourth.example", "Fourth", 26),
+                            _cite("https://second.example", "Second", 30),
+                            _cite("https://first.example", "First", 34),
+                            _cite("https://third.example", "Third", 34),
+                            _cite("https://fourth.example", "Fourth", 34),
+                        ],
+                    ),
+                ]
             )
-        ]
-    )
-
-
-def _support(part_index: int, end_index: int, indices: list[int]) -> types.GroundingSupport:
-    return types.GroundingSupport(
-        segment=types.Segment(part_index=part_index, end_index=end_index),
-        grounding_chunk_indices=indices,
+        ],
     )
 
 
 class _BenchStub:
-    def __init__(self, resp: types.GenerateContentResponse) -> None:
-        self._resp = resp
+    def __init__(self, interaction: interactions.Interaction) -> None:
+        self._interaction = interaction
 
-    async def generate_content(
+    async def create(
         self,
         *,
         model: str,
-        contents: types.ContentListUnion,
-        config: types.GenerateContentConfig | None = None,
-    ) -> types.GenerateContentResponse:
-        return self._resp
+        input: str,
+        tools: Sequence[Mapping[str, str]],
+        store: bool,
+    ) -> interactions.Interaction:
+        return self._interaction
 
 
 @pytest.mark.benchmark
-def test_benchmark_format_grounded_response(benchmark: BenchmarkFixture) -> None:
-    """Benchmark the grounded-response formatter."""
-    resp = _benchmark_response()
-    text, _ = benchmark(format_grounded_response, resp)
+def test_benchmark_format_interaction(benchmark: BenchmarkFixture) -> None:
+    """Benchmark the interaction formatter."""
+    interaction = _benchmark_interaction()
+    text, _ = benchmark(format_interaction, interaction)
     assert text.startswith("Alpha [1]")
 
 
 @pytest.mark.benchmark
 def test_benchmark_google_search_service_search(benchmark: BenchmarkFixture) -> None:
-    """Benchmark the full search path against a stub generator."""
-    svc = GoogleSearchService("gemini-2.5-flash", _BenchStub(_benchmark_response()))
+    """Benchmark the full search path against a stub interactions API."""
+    svc = GoogleSearchService("gemini-3.5-flash", _BenchStub(_benchmark_interaction()))
 
     def run() -> str:
         return anyio.run(svc.search, "latest golang release notes").text

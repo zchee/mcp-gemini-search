@@ -87,9 +87,15 @@ def _run(logpath: str) -> None:
         except Exception as e:
             raise RuntimeError(f"create genai client: {e}") from e
 
-        service = GoogleSearchService(model=config.model, generator=client.aio.models)
+        service = GoogleSearchService(
+            model=config.model,
+            interactions=client.aio.interactions,
+            url_context=config.url_context,
+            code_execution=config.code_execution,
+        )
         server = create_server(service)
 
+        _logging.logger.info("gemini interactions tools: %s", ", ".join(tool["type"] for tool in service.tools))
         _logging.logger.info(_STARTUP_MESSAGE)
         try:
             anyio.run(_serve, server, logpath, backend_options=_backend_options())
