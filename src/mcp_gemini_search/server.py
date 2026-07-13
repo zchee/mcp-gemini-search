@@ -42,8 +42,8 @@ class ToolName(enum.StrEnum):
     DEEP_RESEARCH_RESULT = "deep_research_result"
 
 
-TOOL_NAME = ToolName.GOOGLE_SEARCH
-TOOL_DESCRIPTION = (
+SEARCH_TOOL_NAME = ToolName.GOOGLE_SEARCH
+SEARCH_TOOL_DESCRIPTION = (
     "Performs a web search using Google Search (via the Gemini API) and returns "
     "the results. This tool is useful for finding information on the internet "
     "based on a query."
@@ -262,8 +262,8 @@ def create_server(
     async def list_tools() -> list[types.Tool]:  # noqa: RUF029
         return [
             types.Tool(
-                name=TOOL_NAME,
-                description=TOOL_DESCRIPTION,
+                name=SEARCH_TOOL_NAME,
+                description=SEARCH_TOOL_DESCRIPTION,
                 inputSchema=_INPUT_SCHEMA,
                 outputSchema=_OUTPUT_SCHEMA,
             ),
