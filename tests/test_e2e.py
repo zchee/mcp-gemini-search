@@ -21,6 +21,7 @@ import os
 import signal
 import sys
 from pathlib import Path
+from typing import Any
 
 import anyio
 import orjson
@@ -214,3 +215,132 @@ async def test_live_google_search_returns_grounded_text() -> None:
     assert block.text.strip()
     if result.structuredContent and result.structuredContent.get("sources"):
         assert "\n## Sources\n" in block.text
+
+
+async def test_stdio_handshake_with_deep_research_lists_three_tools() -> None:
+    """With GEMINI_ENABLE_DEEP_RESEARCH=1 the binary advertises all three tools."""
+    golden_tools = orjson.loads(
+        (Path(__file__).parent / "golden" / "tools_list_deep_research.json").read_text(encoding="utf-8")
+    )["result"]["tools"]
+    params = StdioServerParameters(
+        command=str(BINARY),
+        env={
+            **get_default_environment(),
+            "GEMINI_API_KEY": "dummy",
+            "GEMINI_ENABLE_DEEP_RESEARCH": "1",
+        },
+    )
+    with anyio.fail_after(_SUBPROCESS_TIMEOUT):
+        async with stdio_client(params) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                tools = await session.list_tools()
+
+    assert len(tools.tools) == 3
+    for tool, golden in zip(tools.tools, golden_tools, strict=True):
+        assert tool.name == golden["name"]
+        assert tool.description == golden["description"]
+        assert tool.inputSchema == golden["inputSchema"]
+        assert tool.outputSchema == golden["outputSchema"]
+
+
+@pytest.mark.live
+@pytest.mark.skipif(
+    not os.environ.get("RUN_LIVE_API")
+    or not (os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"))
+    or not os.environ.get("GEMINI_ENABLE_DEEP_RESEARCH"),
+    reason=("RUN_LIVE_API, a real GEMINI_API_KEY/GOOGLE_API_KEY, and GEMINI_ENABLE_DEEP_RESEARCH are required"),
+)
+async def test_live_deep_research_start_and_poll_then_cancel() -> None:
+    """Start a deep research run, poll once, then cancel the billed background job."""
+    from google import genai
+
+    api_key = os.environ.get("GEMINI_API_KEY") or os.environ["GOOGLE_API_KEY"]
+    params = StdioServerParameters(
+        command=str(BINARY),
+        env={
+            **get_default_environment(),
+            "GEMINI_API_KEY": api_key,
+            "GEMINI_ENABLE_DEEP_RESEARCH": "1",
+        },
+    )
+    interaction_id = ""
+    with anyio.fail_after(120):
+        async with stdio_client(params) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                start = await session.call_tool(
+                    "deep_research",
+                    {"query": "one-sentence summary of the Go programming language"},
+                )
+                assert not start.isError
+                assert start.structuredContent is not None
+                interaction_id = start.structuredContent["interaction_id"]
+                assert interaction_id
+
+                poll = await session.call_tool(
+                    "deep_research_result",
+                    {"interaction_id": interaction_id, "wait_seconds": 5},
+                )
+                assert not poll.isError
+                assert poll.structuredContent is not None
+                assert poll.structuredContent["status"] in {"in_progress", "completed"}
+
+    # Cancel via the SDK so the billed background run does not linger.
+    client = genai.Client(api_key=api_key)
+    await client.aio.interactions.cancel(interaction_id)
+
+
+@pytest.mark.live
+@pytest.mark.slow
+@pytest.mark.skipif(
+    not os.environ.get("RUN_SLOW"),
+    reason="set RUN_SLOW=1 to run the full multi-minute deep research live test",
+)
+@pytest.mark.skipif(
+    not os.environ.get("RUN_LIVE_API")
+    or not (os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"))
+    or not os.environ.get("GEMINI_ENABLE_DEEP_RESEARCH"),
+    reason=("RUN_LIVE_API, a real GEMINI_API_KEY/GOOGLE_API_KEY, and GEMINI_ENABLE_DEEP_RESEARCH are required"),
+)
+async def test_live_deep_research_full_run_to_completion() -> None:
+    """Gated by RUN_SLOW=1 in addition to the live marker so `-m live` alone never runs this multi-minute billed job."""
+    api_key = os.environ.get("GEMINI_API_KEY") or os.environ["GOOGLE_API_KEY"]
+    params = StdioServerParameters(
+        command=str(BINARY),
+        env={
+            **get_default_environment(),
+            "GEMINI_API_KEY": api_key,
+            "GEMINI_ENABLE_DEEP_RESEARCH": "1",
+        },
+    )
+    with anyio.fail_after(15 * 60):
+        async with stdio_client(params) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                start = await session.call_tool(
+                    "deep_research",
+                    {"query": "one-paragraph overview of the MCP protocol"},
+                )
+                assert not start.isError
+                assert start.structuredContent is not None
+                interaction_id = start.structuredContent["interaction_id"]
+
+                status = "in_progress"
+                report_text = ""
+                sources: list[Any] | None = None
+                while status not in {"completed", "failed", "cancelled"}:
+                    poll = await session.call_tool(
+                        "deep_research_result",
+                        {"interaction_id": interaction_id, "wait_seconds": 60},
+                    )
+                    assert not poll.isError
+                    assert poll.structuredContent is not None
+                    status = poll.structuredContent["status"]
+                    report_text = poll.structuredContent.get("text", "")
+                    sources = poll.structuredContent.get("sources")
+
+                assert status == "completed"
+                assert report_text.strip()
+                assert sources
+                assert len(sources) >= 1

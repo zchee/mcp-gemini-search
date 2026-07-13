@@ -29,9 +29,12 @@ ENV_GOOGLE_CLOUD_LOCATION = "GOOGLE_CLOUD_LOCATION"
 ENV_GOOGLE_GENAI_USE_VERTEXAI = "GOOGLE_GENAI_USE_VERTEXAI"
 ENV_GEMINI_ENABLE_URL_CONTEXT = "GEMINI_ENABLE_URL_CONTEXT"
 ENV_GEMINI_ENABLE_CODE_EXECUTION = "GEMINI_ENABLE_CODE_EXECUTION"
+ENV_GEMINI_ENABLE_DEEP_RESEARCH = "GEMINI_ENABLE_DEEP_RESEARCH"
+ENV_GEMINI_DEEP_RESEARCH_AGENT = "GEMINI_DEEP_RESEARCH_AGENT"
 
 DEFAULT_MODEL = "gemini-3.1-pro-preview"
 DEFAULT_LOCATION = "global"
+DEFAULT_DEEP_RESEARCH_AGENT = "deep-research-preview-04-2026"
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,6 +48,8 @@ class ServerConfig:
     location: str = ""
     url_context: bool = False
     code_execution: bool = False
+    deep_research: bool = False
+    deep_research_agent: str = DEFAULT_DEEP_RESEARCH_AGENT
 
     def new_client(self) -> genai.Client:
         """Create a new genai.Client based on the server configuration."""
@@ -61,6 +66,8 @@ def load_config_from_env(getenv: Callable[[str], str]) -> ServerConfig:
     model = getenv(ENV_GEMINI_MODEL).strip() or DEFAULT_MODEL
     url_context = _is_enabled(getenv(ENV_GEMINI_ENABLE_URL_CONTEXT))
     code_execution = _is_enabled(getenv(ENV_GEMINI_ENABLE_CODE_EXECUTION))
+    deep_research = _is_enabled(getenv(ENV_GEMINI_ENABLE_DEEP_RESEARCH))
+    deep_research_agent = getenv(ENV_GEMINI_DEEP_RESEARCH_AGENT).strip() or DEFAULT_DEEP_RESEARCH_AGENT
 
     if _is_enabled(getenv(ENV_GOOGLE_GENAI_USE_VERTEXAI)):
         project = getenv(ENV_GOOGLE_CLOUD_PROJECT)
@@ -76,6 +83,8 @@ def load_config_from_env(getenv: Callable[[str], str]) -> ServerConfig:
             location=location,
             url_context=url_context,
             code_execution=code_execution,
+            deep_research=deep_research,
+            deep_research_agent=deep_research_agent,
         )
 
     api_key = _first_non_empty(
@@ -92,6 +101,8 @@ def load_config_from_env(getenv: Callable[[str], str]) -> ServerConfig:
         api_key=api_key,
         url_context=url_context,
         code_execution=code_execution,
+        deep_research=deep_research,
+        deep_research_agent=deep_research_agent,
     )
 
 

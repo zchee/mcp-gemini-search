@@ -28,6 +28,7 @@ from mcp.server.stdio import stdio_server
 
 from mcp_gemini_search import _logging
 from mcp_gemini_search.config import load_config_from_env
+from mcp_gemini_search.research import DeepResearchService
 from mcp_gemini_search.search import GoogleSearchService
 from mcp_gemini_search.server import create_server
 
@@ -93,9 +94,23 @@ def _run(logpath: str) -> None:
             url_context=config.url_context,
             code_execution=config.code_execution,
         )
-        server = create_server(service)
+        research = None
+        if config.deep_research:
+            research = DeepResearchService(
+                agent=config.deep_research_agent,
+                interactions=client.aio.interactions,
+            )
+        server = create_server(service, research)
 
-        _logging.logger.info("gemini interactions tools: %s", ", ".join(tool["type"] for tool in service.tools))
+        tools_msg = ", ".join(tool["type"] for tool in service.tools)
+        if config.deep_research:
+            _logging.logger.info(
+                "gemini interactions tools: %s; deep research agent: %s",
+                tools_msg,
+                config.deep_research_agent,
+            )
+        else:
+            _logging.logger.info("gemini interactions tools: %s", tools_msg)
         _logging.logger.info(_STARTUP_MESSAGE)
         try:
             anyio.run(_serve, server, logpath, backend_options=_backend_options())

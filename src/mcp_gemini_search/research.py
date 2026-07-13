@@ -1,0 +1,286 @@
+# Copyright 2026 The mcp-gemini-search Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""Deep Research service backed by the Gemini Interactions API."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any, Protocol
+
+import anyio
+from google.genai import interactions
+
+from mcp_gemini_search import _markdown
+from mcp_gemini_search._logging import logger
+from mcp_gemini_search.search import (
+    GoogleSearchSource,
+    _cite_block,
+    _render_source_list,
+    _step_error_message,
+)
+
+_TERMINAL_STATUSES = frozenset({"completed", "failed", "cancelled"})
+_MAX_WAIT_SECONDS = 60
+
+
+@dataclass(frozen=True, slots=True)
+class DeepResearchStart:
+    """The result of starting a background Deep Research agent run."""
+
+    interaction_id: str
+    status: str  # e.g. "in_progress"
+
+    def to_structured(self) -> dict[str, Any]:
+        """Return the MCP structured-content dict with both fields always present."""
+        return {"interaction_id": self.interaction_id, "status": self.status}
+
+
+@dataclass(frozen=True, slots=True)
+class DeepResearchResult:
+    """The status (and, once completed, the report) of a Deep Research run."""
+
+    interaction_id: str
+    status: str  # completed | in_progress | failed | cancelled | ...
+    text: str = ""
+    sources: tuple[GoogleSearchSource, ...] = ()
+
+    def to_structured(self) -> dict[str, Any]:
+        """Return the MCP structured-content dict with omit-empty semantics.
+
+        ``interaction_id`` and ``status`` are always present. ``text`` is
+        included only when non-empty. Each source always carries ``index``;
+        ``title`` and ``uri`` are included only when non-empty. The ``sources``
+        key is omitted entirely when there are no sources.
+        """
+        structured: dict[str, Any] = {
+            "interaction_id": self.interaction_id,
+            "status": self.status,
+        }
+        if self.text:
+            structured["text"] = self.text
+        if self.sources:
+            source_list: list[dict[str, Any]] = []
+            for source in self.sources:
+                entry: dict[str, Any] = {"index": source.index}
+                if source.title:
+                    entry["title"] = source.title
+                if source.uri:
+                    entry["uri"] = source.uri
+                source_list.append(entry)
+            structured["sources"] = source_list
+        return structured
+
+
+class ResearchInteractions(Protocol):
+    """Structural type for the async Gemini interactions API subset this service needs.
+
+    Declared with Any returns for the same SDK-union reason documented in
+    search.py's InteractionCreator Protocol. Structurally satisfied by
+    client.aio.interactions.
+    """
+
+    async def create(self, **kwargs: Any) -> Any:
+        """Create a background Deep Research interaction.
+
+        Declared as ``Any`` because the SDK method returns
+        ``Interaction | AsyncStream[InteractionSSEEvent]``; this service never
+        sets ``stream``, so the result is always an ``Interaction``.
+        """
+        ...
+
+    async def get(self, interaction_id: str, /) -> Any:
+        """Fetch an interaction by id.
+
+        Declared as ``Any`` for the same SDK-union reason as ``create``. Called
+        positionally so the Protocol parameter name need not match the SDK's
+        ``id`` keyword.
+        """
+        ...
+
+
+class DeepResearchService:
+    """Starts and polls Gemini Deep Research agent runs."""
+
+    def __init__(
+        self,
+        agent: str,
+        interactions: ResearchInteractions | None,
+        *,
+        poll_interval: float = 5.0,
+    ) -> None:
+        """Store the agent name, the injected interactions API, and the poll interval."""
+        self._agent = agent
+        self._interactions = interactions
+        self._poll_interval = poll_interval
+
+    async def start(
+        self,
+        query: str,
+        *,
+        plan_only: bool = False,
+        previous_interaction_id: str = "",
+    ) -> DeepResearchStart:
+        """Start a background Deep Research run and return its interaction id.
+
+        Raises:
+            RuntimeError: If the service is not configured, if the backend call
+                fails, or if the response lacks an interaction id.
+            ValueError: If ``query`` is empty or whitespace only.
+        """
+        if self._interactions is None:
+            raise RuntimeError("deep research service is not configured")
+        if not query.strip():
+            raise ValueError("research query cannot be empty")
+
+        body: dict[str, Any] = {
+            "agent": self._agent,
+            "input": query,
+            "background": True,
+        }
+        if plan_only:
+            body["agent_config"] = {
+                "type": "deep-research",
+                "collaborative_planning": True,
+            }
+        if previous_interaction_id:
+            body["previous_interaction_id"] = previous_interaction_id
+
+        try:
+            interaction = await self._interactions.create(**body)
+        except Exception as e:
+            raise RuntimeError(f"deep research failed: {e}") from e
+
+        if not interaction.id:
+            raise RuntimeError("deep research failed: missing interaction id")
+
+        logger.info(
+            "deep research started: id=%s agent=%s",
+            interaction.id,
+            self._agent,
+        )
+        return DeepResearchStart(interaction_id=interaction.id, status=interaction.status)
+
+    async def result(
+        self,
+        interaction_id: str,
+        *,
+        wait_seconds: int = 0,
+    ) -> DeepResearchResult:
+        """Fetch (and optionally long-poll) a Deep Research run by id.
+
+        Raises:
+            RuntimeError: If the service is not configured, if the backend call
+                fails, if the run fails or is cancelled, or if the completed
+                report cannot be formatted.
+            ValueError: If ``interaction_id`` is empty or whitespace only.
+        """
+        if self._interactions is None:
+            raise RuntimeError("deep research service is not configured")
+        if not interaction_id.strip():
+            raise ValueError("interaction id cannot be empty")
+
+        wait_seconds = max(0, min(_MAX_WAIT_SECONDS, wait_seconds))
+        deadline = anyio.current_time() + wait_seconds
+        interaction: Any = None
+        status = ""
+
+        while True:
+            try:
+                interaction = await self._interactions.get(interaction_id)
+            except Exception as e:
+                raise RuntimeError(f"deep research failed: {e}") from e
+
+            status = interaction.status
+            logger.info("deep research poll: id=%s status=%s", interaction_id, status)
+
+            if status in _TERMINAL_STATUSES:
+                break
+
+            # wait_seconds == 0 must never sleep, even under clock jitter.
+            remaining = 0.0 if wait_seconds == 0 else deadline - anyio.current_time()
+            if remaining <= 0:
+                return DeepResearchResult(interaction_id=interaction_id, status=status)
+
+            await anyio.sleep(min(self._poll_interval, remaining))
+
+        if status == "completed":
+            try:
+                text, sources = format_research_report(interaction)
+            except Exception as e:
+                raise RuntimeError(f"deep research failed: {e}") from e
+            logger.info(
+                "deep research completed: id=%s text_len=%d sources=%d",
+                interaction_id,
+                len(text),
+                len(sources),
+            )
+            return DeepResearchResult(
+                interaction_id=interaction_id,
+                status="completed",
+                text=text,
+                sources=sources,
+            )
+
+        # failed or cancelled
+        top_error = getattr(interaction, "error", None)
+        if top_error is not None and not isinstance(top_error, str):
+            top_error = str(top_error)
+        detail = _step_error_message(interaction) or (top_error or "")
+        if detail:
+            raise RuntimeError(f"deep research {status}: {detail}")
+        raise RuntimeError(f"deep research {status}")
+
+
+def format_research_report(
+    interaction: interactions.Interaction,
+) -> tuple[str, tuple[GoogleSearchSource, ...]]:
+    """Format the last consecutive model-output run into Markdown and sources.
+
+    Selects the last maximal consecutive run of ``ModelOutputStep`` steps in
+    ``interaction.steps``, tolerating trailing non-model-output steps. Each
+    text block is cited via ``_cite_block`` with shared source numbering; the
+    document is normalized with mdformat and a ``## Sources`` section is
+    appended when sources are present.
+
+    Raises:
+        RuntimeError: If the selected run contains no usable text.
+    """
+    steps = interaction.steps or []
+    end = len(steps)
+    while end > 0 and not isinstance(steps[end - 1], interactions.ModelOutputStep):
+        end -= 1
+    start = end
+    while start > 0 and isinstance(steps[start - 1], interactions.ModelOutputStep):
+        start -= 1
+    run = steps[start:end]
+
+    sources: list[GoogleSearchSource] = []
+    number_by_key: dict[str, int] = {}
+    step_texts: list[str] = []
+    for step in run:
+        if not isinstance(step, interactions.ModelOutputStep):
+            continue
+        blocks = [block for block in step.content or [] if isinstance(block, interactions.TextContent) and block.text]
+        if blocks:
+            step_texts.append("".join(_cite_block(block, sources, number_by_key) for block in blocks))
+
+    body = "\n\n".join(step_texts)
+    if not body.strip():
+        raise RuntimeError("no response from Gemini model")
+
+    document = _markdown.format_document(body)
+    if sources:
+        document = _markdown.format_document(f"{document}\n\n## Sources\n\n{_render_source_list(sources)}")
+    return document, tuple(sources)

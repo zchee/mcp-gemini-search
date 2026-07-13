@@ -113,4 +113,5 @@ addopts = "-m 'not benchmark and not live'"
 markers = [
     "benchmark: performance benchmarks; deselected by default, run with -m benchmark",
     "live: tests that call the real Gemini API; deselected by default, run with -m live",
+    "slow: multi-minute tests excluded from -m live alone; require RUN_SLOW=1",
 ]
