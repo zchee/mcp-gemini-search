@@ -20,7 +20,6 @@ import mdformat
 import pytest
 
 from mcp_gemini_search._markdown import (
-    autolink_or_link,
     escape_link_text,
     format_destination,
     format_document,
@@ -138,16 +137,3 @@ def test_link_escapes_text_and_destination() -> None:
     assert link("a[b]c", "https://x.example") == "[a\\[b\\]c](https://x.example)"
     assert link("T", "https://x.example/a b") == "[T](https://x.example/a%20b)"
     assert link("T", "https://x.example/a(b") == "[T](<https://x.example/a(b>)"
-
-
-@pytest.mark.parametrize(
-    ("uri", "expected"),
-    [
-        ("https://x.example/path", "<https://x.example/path>"),
-        ("x.example/no-scheme", "[x.example/no-scheme](x.example/no-scheme)"),
-        ("https://x.example/a b", "[https://x.example/a b](https://x.example/a%20b)"),
-    ],
-)
-def test_autolink_or_link(uri: str, expected: str) -> None:
-    """URIs render as autolinks when CommonMark allows, else as inline links."""
-    assert autolink_or_link(uri) == expected

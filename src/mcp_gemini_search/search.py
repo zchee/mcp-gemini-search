@@ -306,7 +306,7 @@ def _render_source_list(sources: Sequence[GoogleSearchSource]) -> str:
         if source.title and source.uri and safe:
             entry = _markdown.link(source.title, source.uri)
         elif source.uri and safe:
-            entry = _markdown.autolink_or_link(source.uri)
+            entry = _markdown.link(source.uri, source.uri)
         elif source.title and source.uri:
             entry = f"{_markdown.escape_link_text(source.title)} ({_markdown.escape_link_text(source.uri)})"
         elif source.uri:

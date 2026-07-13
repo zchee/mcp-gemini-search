@@ -29,10 +29,6 @@ _MDFORMAT_EXTENSIONS = frozenset({"gfm"})
 # must be flattened so titles cannot open a new Markdown block.
 _LINK_TEXT_ESCAPES = str.maketrans({"\\": "\\\\", "[": "\\[", "]": "\\]", "<": "\\<", "\n": " ", "\r": " "})
 
-# CommonMark absolute-URI autolink: a 2-32 character scheme, a colon, then any
-# characters other than whitespace, ``<``, and ``>``.
-_AUTOLINK_RE = re.compile(r"[A-Za-z][A-Za-z0-9+.-]{1,31}:[^\s<>]*")
-
 _SCHEME_RE = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*:")
 _SAFE_SCHEMES = frozenset({"http", "https", "mailto"})
 
@@ -63,13 +59,6 @@ def format_document(text: str) -> str:
 def link(text: str, uri: str) -> str:
     """Render an inline link, escaping ``text`` and ``uri`` so both always parse."""
     return f"[{escape_link_text(text)}]({format_destination(uri)})"
-
-
-def autolink_or_link(uri: str) -> str:
-    """Render ``uri`` as an autolink when CommonMark allows it, else as an inline link."""
-    if _AUTOLINK_RE.fullmatch(uri):
-        return f"<{uri}>"
-    return link(uri, uri)
 
 
 def escape_link_text(text: str) -> str:

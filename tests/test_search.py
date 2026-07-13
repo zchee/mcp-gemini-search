@@ -493,7 +493,8 @@ def test_source_list_escapes_titles_and_uris() -> None:
         )
     )
     assert text == (
-        "hi\n\n## Sources\n\n1. [We [analyzed] it](<https://x.example/a(b)c>)\n2. <https://only.example>\n3. OnlyTitle"
+        "hi\n\n## Sources\n\n1. [We [analyzed] it](<https://x.example/a(b)c>)\n"
+        "2. [https://only.example](https://only.example)\n3. OnlyTitle"
     )
 
 
