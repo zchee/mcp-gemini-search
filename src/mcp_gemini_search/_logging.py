@@ -1,4 +1,4 @@
-# Copyright 2026 The mcp-gemini-google-search Authors.
+# Copyright 2026 The mcp-gemini-search Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -40,7 +40,7 @@ import orjson
 from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
 from mcp.shared.message import SessionMessage
 
-_LOGGER_NAME = "mcp_gemini_google_search"
+_LOGGER_NAME = "mcp_gemini_search"
 
 logger = logging.getLogger(_LOGGER_NAME)
 
@@ -133,12 +133,8 @@ async def frame_logging_streams(
     frame with a ``write:`` prefix. Closing the stdio read stream (stdin EOF)
     propagates cleanly so the server shuts down.
     """
-    server_read_send, server_read_recv = anyio.create_memory_object_stream[
-        SessionMessage | Exception
-    ](0)
-    server_write_send, server_write_recv = anyio.create_memory_object_stream[
-        SessionMessage
-    ](0)
+    server_read_send, server_read_recv = anyio.create_memory_object_stream[SessionMessage | Exception](0)
+    server_write_send, server_write_recv = anyio.create_memory_object_stream[SessionMessage](0)
 
     async def pump_inbound() -> None:
         async with server_read_send:

@@ -1,4 +1,4 @@
-# Copyright 2026 The mcp-gemini-google-search Authors.
+# Copyright 2026 The mcp-gemini-search Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -108,9 +108,7 @@ class GoogleSearchService:
             resp = await self._generator.generate_content(
                 model=self._model,
                 contents=[types.Content(role="user", parts=[types.Part(text=query)])],
-                config=types.GenerateContentConfig(
-                    tools=[types.Tool(google_search=types.GoogleSearch())]
-                ),
+                config=types.GenerateContentConfig(tools=[types.Tool(google_search=types.GoogleSearch())]),
             )
         except Exception as e:
             raise RuntimeError(f"google search failed: {e}") from e
@@ -190,11 +188,7 @@ def _candidate_text(resp: types.GenerateContentResponse) -> str:
     if not candidates:
         return ""
     candidate = candidates[0]
-    if (
-        candidate is None
-        or candidate.content is None
-        or candidate.content.parts is None
-    ):
+    if candidate is None or candidate.content is None or candidate.content.parts is None:
         return ""
     pieces: list[str] = []
     for part in candidate.content.parts:

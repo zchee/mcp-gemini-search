@@ -12,12 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Shared pytest fixtures for the test suite."""
+"""Package version derived from installed distribution metadata."""
 
-import pytest
+from importlib.metadata import PackageNotFoundError, version
 
-
-@pytest.fixture
-def anyio_backend() -> str:
-    """Pin anyio-backed async tests to the asyncio event loop."""
-    return "asyncio"
+try:
+    __version__ = version("mcp-gemini-search")
+except PackageNotFoundError:
+    # Running from a source tree that is not installed; mirror the
+    # uv-dynamic-versioning fallback-version.
+    __version__ = "0.0.0"

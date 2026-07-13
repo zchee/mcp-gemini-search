@@ -1,4 +1,4 @@
-# Copyright 2026 The mcp-gemini-google-search Authors.
+# Copyright 2026 The mcp-gemini-search Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -23,7 +23,7 @@ import orjson
 import pytest
 from google.genai import types
 
-from mcp_gemini_google_search.search import (
+from mcp_gemini_search.search import (
     ContentGenerator,
     GoogleSearchOutput,
     GoogleSearchService,
@@ -56,6 +56,7 @@ class StubGenerator:
         contents: types.ContentListUnion,
         config: types.GenerateContentConfig | None = None,
     ) -> types.GenerateContentResponse:
+        """Record the request and return the canned response or raise the error."""
         self.got_model = model
         self.got_contents = contents
         self.got_config = config
@@ -74,9 +75,7 @@ def _web(title: str, uri: str) -> types.GroundingChunk:
     return types.GroundingChunk(web=types.GroundingChunkWeb(title=title, uri=uri))
 
 
-def _support(
-    part_index: int, end_index: int, indices: Sequence[int]
-) -> types.GroundingSupport:
+def _support(part_index: int, end_index: int, indices: Sequence[int]) -> types.GroundingSupport:
     return types.GroundingSupport(
         segment=types.Segment(part_index=part_index, end_index=end_index),
         grounding_chunk_indices=list(indices),
@@ -110,6 +109,7 @@ def _response(
 
 @pytest.mark.anyio
 async def test_search_happy_path() -> None:
+    """search() returns cited text and sources and issues the expected request."""
     stub = StubGenerator(
         resp=_response(
             [_part("Answer")],
@@ -146,6 +146,7 @@ async def test_search_happy_path() -> None:
 
 @pytest.mark.anyio
 async def test_search_not_configured() -> None:
+    """A missing generator raises the not-configured error."""
     svc = GoogleSearchService("gemini-2.5-flash", None)
     with pytest.raises(RuntimeError) as excinfo:
         await svc.search("golang")
@@ -154,6 +155,7 @@ async def test_search_not_configured() -> None:
 
 @pytest.mark.anyio
 async def test_search_empty_query() -> None:
+    """A whitespace-only query raises ValueError."""
     svc = GoogleSearchService("gemini-2.5-flash", StubGenerator())
     with pytest.raises(ValueError) as excinfo:
         await svc.search("   ")
@@ -162,6 +164,7 @@ async def test_search_empty_query() -> None:
 
 @pytest.mark.anyio
 async def test_search_backend_error() -> None:
+    """Generator failures are wrapped with the google-search-failed prefix."""
     backend_error = RuntimeError("backend failed")
     svc = GoogleSearchService("gemini-2.5-flash", StubGenerator(error=backend_error))
     with pytest.raises(RuntimeError) as excinfo:
@@ -172,6 +175,7 @@ async def test_search_backend_error() -> None:
 
 @pytest.mark.anyio
 async def test_search_wraps_format_error() -> None:
+    """Formatter failures are wrapped with the same prefix as generator failures."""
     stub = StubGenerator(resp=types.GenerateContentResponse())
     svc = GoogleSearchService("gemini-2.5-flash", stub)
     with pytest.raises(RuntimeError) as excinfo:
@@ -182,15 +186,12 @@ async def test_search_wraps_format_error() -> None:
 
 
 def test_format_grounded_response() -> None:
+    """Citations and the source list render byte-identically to Go."""
     resp = _response(
         [_part("Alpha "), _part("Beta")],
         [
             _web("First", "https://first.example"),
-            types.GroundingChunk(
-                maps=types.GroundingChunkMaps(
-                    title="Second", uri="https://second.example"
-                )
-            ),
+            types.GroundingChunk(maps=types.GroundingChunkMaps(title="Second", uri="https://second.example")),
         ],
         [_support(0, 6, [0]), _support(1, 4, [0, 1])],
     )
@@ -198,9 +199,7 @@ def test_format_grounded_response() -> None:
     text, sources = format_grounded_response(resp)
 
     assert text == (
-        "Alpha [1]Beta[1,2]\n\nSources:\n"
-        "[1] First (https://first.example)\n"
-        "[2] Second (https://second.example)"
+        "Alpha [1]Beta[1,2]\n\nSources:\n[1] First (https://first.example)\n[2] Second (https://second.example)"
     )
     assert len(sources) == 2
     assert sources[1].title == "Second"
@@ -208,18 +207,21 @@ def test_format_grounded_response() -> None:
 
 
 def test_format_grounded_response_no_text() -> None:
+    """An empty response raises the no-response error."""
     with pytest.raises(RuntimeError) as excinfo:
         format_grounded_response(types.GenerateContentResponse())
     assert str(excinfo.value) == "no response from Gemini model"
 
 
 def test_format_grounded_response_none() -> None:
+    """A None response raises the no-response error."""
     with pytest.raises(RuntimeError) as excinfo:
         format_grounded_response(None)
     assert str(excinfo.value) == "no response from Gemini model"
 
 
 def test_format_grounded_response_orders_and_deduplicates_citations() -> None:
+    """Insertions sort by offset and consecutive duplicate numbers collapse."""
     resp = _response(
         [_part("Alpha "), _part("Beta")],
         [
@@ -235,11 +237,7 @@ def test_format_grounded_response_orders_and_deduplicates_citations() -> None:
 
     text, sources = format_grounded_response(resp)
 
-    assert text == (
-        "Alpha [1]Beta[1,2]\n\nSources:\n"
-        "[1] One (https://one.example)\n"
-        "[2] Two (https://two.example)"
-    )
+    assert text == ("Alpha [1]Beta[1,2]\n\nSources:\n[1] One (https://one.example)\n[2] Two (https://two.example)")
     assert len(sources) == 2
 
 
@@ -257,11 +255,7 @@ def test_format_grounded_response_orders_and_deduplicates_citations() -> None:
             ("M", "m://u"),
         ),
         (
-            types.GroundingChunk(
-                retrieved_context=types.GroundingChunkRetrievedContext(
-                    title="R", uri="r://u"
-                )
-            ),
+            types.GroundingChunk(retrieved_context=types.GroundingChunkRetrievedContext(title="R", uri="r://u")),
             ("R", "r://u"),
         ),
         (
@@ -275,18 +269,13 @@ def test_format_grounded_response_orders_and_deduplicates_citations() -> None:
             ("Image Result", "https://source.example"),
         ),
         (
-            types.GroundingChunk(
-                image=types.GroundingChunkImage(
-                    title="OnlyImage", image_uri="https://image.example"
-                )
-            ),
+            types.GroundingChunk(image=types.GroundingChunkImage(title="OnlyImage", image_uri="https://image.example")),
             ("OnlyImage", "https://image.example"),
         ),
     ],
 )
-def test_grounding_source(
-    chunk: types.GroundingChunk | None, expected: tuple[str, str]
-) -> None:
+def test_grounding_source(chunk: types.GroundingChunk | None, expected: tuple[str, str]) -> None:
+    """Each chunk variant yields its title and URI."""
     assert _grounding_source(chunk) == expected
 
 
@@ -299,16 +288,19 @@ def test_grounding_source(
     ],
 )
 def test_citation_text(numbers: list[int], expected: str) -> None:
+    """Citation lists render as bracketed comma-joined numbers."""
     assert _citation_text(numbers) == expected
 
 
 def test_citation_text_concatenation() -> None:
+    """Citation text concatenates after a prefix like Go writeCitationText."""
     assert "Answer" + _citation_text([]) == "Answer[]"
     assert "Answer" + _citation_text([1, 2, 3]) == "Answer[1,2,3]"
     assert "Answer" + _citation_text([1, 12345]) == "Answer[1,12345]"
 
 
 def test_citation_marker_multibyte_japanese() -> None:
+    """end_index counts UTF-8 bytes, not code points, for Japanese text."""
     # end_index=9 bytes = 3 characters of 3 bytes each ("日本語").
     text, _ = format_grounded_response(
         _response(
@@ -321,6 +313,7 @@ def test_citation_marker_multibyte_japanese() -> None:
 
 
 def test_citation_marker_japanese_ascii_multipart() -> None:
+    """Byte offsets stay aligned across mixed Japanese and ASCII parts."""
     # part 0 "日本" = 6 bytes (base 0), part 1 "test" = 4 bytes (base 6).
     text, _ = format_grounded_response(
         _response(
@@ -329,14 +322,11 @@ def test_citation_marker_japanese_ascii_multipart() -> None:
             [_support(0, 6, [0]), _support(1, 4, [1])],
         )
     )
-    assert text == (
-        "日本[1]test[2]\n\nSources:\n"
-        "[1] X (https://x.example)\n"
-        "[2] Y (https://y.example)"
-    )
+    assert text == ("日本[1]test[2]\n\nSources:\n[1] X (https://x.example)\n[2] Y (https://y.example)")
 
 
 def test_citation_marker_emoji_boundary() -> None:
+    """A four-byte emoji boundary places the marker correctly."""
     # end_index=4 lands on the 4-byte boundary of the emoji, before "ok".
     text, _ = format_grounded_response(
         _response(
@@ -349,6 +339,7 @@ def test_citation_marker_emoji_boundary() -> None:
 
 
 def test_end_index_equals_byte_length_accepted() -> None:
+    """end_index equal to the byte length is accepted."""
     # "café" = 5 bytes (é is 2 bytes); end_index=5 == byte length is accepted.
     text, _ = format_grounded_response(
         _response(
@@ -361,6 +352,7 @@ def test_end_index_equals_byte_length_accepted() -> None:
 
 
 def test_end_index_beyond_byte_length_skipped() -> None:
+    """end_index past the byte length skips the support."""
     # "café" = 5 bytes; end_index=6 exceeds it, so the support is skipped and no
     # marker is inserted, while the source itself is still listed.
     text, _ = format_grounded_response(
@@ -374,6 +366,7 @@ def test_end_index_beyond_byte_length_skipped() -> None:
 
 
 def test_thought_part_excluded_and_offsets_aligned() -> None:
+    """Thought parts are excluded from text and offset bases alike."""
     text, _ = format_grounded_response(
         _response(
             [_part("Alpha "), _part("THOUGHT", thought=True), _part("Beta")],
@@ -382,14 +375,11 @@ def test_thought_part_excluded_and_offsets_aligned() -> None:
         )
     )
     assert "THOUGHT" not in text
-    assert text == (
-        "Alpha [1]Beta[2]\n\nSources:\n"
-        "[1] X (https://x.example)\n"
-        "[2] Y (https://y.example)"
-    )
+    assert text == ("Alpha [1]Beta[2]\n\nSources:\n[1] X (https://x.example)\n[2] Y (https://y.example)")
 
 
 def test_empty_source_skipped_and_indices_preserved() -> None:
+    """Chunks without title and URI are skipped while index gaps remain."""
     text, sources = format_grounded_response(
         _response(
             [_part("hello")],
@@ -401,20 +391,18 @@ def test_empty_source_skipped_and_indices_preserved() -> None:
         )
     )
     assert [source.index for source in sources] == [1, 3]
-    assert text == (
-        "hello\n\nSources:\n[1] A (https://a.example)\n[3] C (https://c.example)"
-    )
+    assert text == ("hello\n\nSources:\n[1] A (https://a.example)\n[3] C (https://c.example)")
 
 
 def test_no_grounding_metadata_returns_plain_text() -> None:
-    text, sources = format_grounded_response(
-        _response([_part("hello")], metadata=False)
-    )
+    """Without grounding metadata the plain text passes through."""
+    text, sources = format_grounded_response(_response([_part("hello")], metadata=False))
     assert text == "hello"
     assert sources == ()
 
 
 def test_supports_without_usable_sources_no_insertion() -> None:
+    """Supports without usable sources insert no markers."""
     text, sources = format_grounded_response(
         _response(
             [_part("hello")],
@@ -427,6 +415,7 @@ def test_supports_without_usable_sources_no_insertion() -> None:
 
 
 def test_to_structured_omits_empty_fields() -> None:
+    """to_structured omits empty title and uri keys."""
     out = GoogleSearchOutput(
         query="q",
         text="t",
@@ -446,6 +435,7 @@ def test_to_structured_omits_empty_fields() -> None:
 
 
 def test_to_structured_omits_empty_sources() -> None:
+    """to_structured omits the sources key when empty."""
     out = GoogleSearchOutput(query="q", text="t")
     assert out.to_structured() == {"query": "q", "text": "t"}
 
@@ -458,6 +448,7 @@ def _golden_output_schema() -> dict[str, Any]:
 
 
 def test_to_structured_validates_against_golden_schema() -> None:
+    """to_structured output validates against the golden outputSchema."""
     schema = _golden_output_schema()
 
     populated = GoogleSearchOutput(
@@ -476,6 +467,7 @@ def test_to_structured_validates_against_golden_schema() -> None:
 
 @pytest.mark.anyio
 async def test_stub_generator_is_usable_content_generator() -> None:
+    """The stub satisfies ContentGenerator through a runtime round-trip."""
     canned = _response([_part("Hi")])
     generator: ContentGenerator = StubGenerator(resp=canned)
     resp = await generator.generate_content(

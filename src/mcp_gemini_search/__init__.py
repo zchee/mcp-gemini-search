@@ -1,4 +1,4 @@
-# Copyright 2026 The mcp-gemini-google-search Authors.
+# Copyright 2026 The mcp-gemini-search Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,4 +14,4 @@
 
 """MCP server for Google Search via Gemini's Grounding with Google Search."""
 
-__version__ = "0.0.1"
+from mcp_gemini_search._version import __version__ as __version__

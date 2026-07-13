@@ -1,4 +1,4 @@
-# Copyright 2026 The mcp-gemini-google-search Authors.
+# Copyright 2026 The mcp-gemini-search Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -33,15 +33,16 @@ from mcp.client.stdio import (
     stdio_client,
 )
 
+from mcp_gemini_search import __version__
+
 pytestmark = pytest.mark.anyio
 
 # The console script installed by `uv sync`; this is exactly what
-# `uv run mcp-gemini-google-search` execs.
-BINARY = Path(sys.executable).parent / "mcp-gemini-google-search"
+# `uv run mcp-gemini-search` execs.
+BINARY = Path(sys.executable).parent / "mcp-gemini-search"
 
 _MISSING_API_KEY_ERROR = (
-    '"GOOGLE_API_KEY" or "GEMINI_API_KEY" environment variable is required '
-    "when using Google AI Studio"
+    '"GOOGLE_API_KEY" or "GEMINI_API_KEY" environment variable is required when using Google AI Studio'
 )
 _STARTUP_LINE = "gemini google search mcp server running on stdio"
 
@@ -83,11 +84,10 @@ async def _kill(proc: asyncio.subprocess.Process) -> None:
 
 
 async def test_stdio_handshake_reports_golden_server_info_and_tool() -> None:
-    golden = orjson.loads(
-        (Path(__file__).parent / "golden" / "initialize.json").read_text(
-            encoding="utf-8"
-        )
-    )["result"]["serverInfo"]
+    """The installed binary serves the golden serverInfo and the google_search tool."""
+    golden = orjson.loads((Path(__file__).parent / "golden" / "initialize.json").read_text(encoding="utf-8"))["result"][
+        "serverInfo"
+    ]
     params = StdioServerParameters(
         command=str(BINARY),
         env={**get_default_environment(), "GEMINI_API_KEY": "dummy"},
@@ -99,7 +99,7 @@ async def test_stdio_handshake_reports_golden_server_info_and_tool() -> None:
                 tools = await session.list_tools()
 
     assert init.serverInfo.name == golden["name"]
-    assert init.serverInfo.version == golden["version"]
+    assert init.serverInfo.version == __version__
     assert init.serverInfo.websiteUrl == golden["websiteUrl"]
 
     tool_names = [tool.name for tool in tools.tools]
@@ -111,6 +111,7 @@ async def test_stdio_handshake_reports_golden_server_info_and_tool() -> None:
 async def test_logpath_records_startup_line_and_jsonrpc_frames(
     tmp_path: Path,
 ) -> None:
+    """-logpath captures the startup line and direction-tagged JSON-RPC frames."""
     logfile = tmp_path / "server.log"
     params = StdioServerParameters(
         command=str(BINARY),
@@ -133,6 +134,7 @@ async def test_logpath_records_startup_line_and_jsonrpc_frames(
 
 
 async def test_stdin_eof_exits_zero_without_pollution() -> None:
+    """stdin EOF exits 0 with protocol-only stdout and a silent stderr."""
     proc = await _spawn([], _dummy_key_env())
     assert proc.stdin is not None
     assert proc.stdout is not None
@@ -156,10 +158,9 @@ async def test_stdin_eof_exits_zero_without_pollution() -> None:
             orjson.loads(line)
 
 
-@pytest.mark.skipif(
-    sys.platform == "win32", reason="POSIX signal termination semantics"
-)
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX signal termination semantics")
 async def test_sigterm_exits_one_with_context_canceled() -> None:
+    """SIGTERM exits 1 with the Go-identical context-canceled message."""
     proc = await _spawn([], _dummy_key_env())
     assert proc.stdin is not None
     assert proc.stdout is not None
@@ -180,6 +181,7 @@ async def test_sigterm_exits_one_with_context_canceled() -> None:
 
 
 async def test_missing_api_key_exits_one_with_config_error() -> None:
+    """A missing API key exits 1 with the exact config error on stderr."""
     proc = await _spawn([], _clean_env())
     stdout, stderr = await asyncio.wait_for(proc.communicate(), _SUBPROCESS_TIMEOUT)
 
@@ -190,11 +192,11 @@ async def test_missing_api_key_exits_one_with_config_error() -> None:
 
 @pytest.mark.live
 @pytest.mark.skipif(
-    not os.environ.get("RUN_LIVE_API")
-    or not (os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")),
+    not os.environ.get("RUN_LIVE_API") or not (os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")),
     reason="RUN_LIVE_API and a real GEMINI_API_KEY/GOOGLE_API_KEY are required",
 )
 async def test_live_google_search_returns_grounded_text() -> None:
+    """A real API call returns grounded text with a source list."""
     api_key = os.environ.get("GEMINI_API_KEY") or os.environ["GOOGLE_API_KEY"]
     params = StdioServerParameters(
         command=str(BINARY),
@@ -204,9 +206,7 @@ async def test_live_google_search_returns_grounded_text() -> None:
         async with stdio_client(params) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                result = await session.call_tool(
-                    "google_search", {"query": "latest Go release version"}
-                )
+                result = await session.call_tool("google_search", {"query": "latest Go release version"})
 
     assert not result.isError
     block = result.content[0]

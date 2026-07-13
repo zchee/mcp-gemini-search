@@ -1,4 +1,4 @@
-# Copyright 2026 The mcp-gemini-google-search Authors.
+# Copyright 2026 The mcp-gemini-search Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -29,13 +29,14 @@ from mcp import types
 from mcp.client.session import ClientSession
 from mcp.shared.memory import create_client_server_memory_streams
 
-from mcp_gemini_google_search.config import DEFAULT_MODEL
-from mcp_gemini_google_search.search import (
+from mcp_gemini_search import __version__
+from mcp_gemini_search.config import DEFAULT_MODEL
+from mcp_gemini_search.search import (
     GoogleSearchOutput,
     GoogleSearchService,
     GoogleSearchSource,
 )
-from mcp_gemini_google_search.server import create_server
+from mcp_gemini_search.server import create_server
 
 pytestmark = pytest.mark.anyio
 
@@ -63,11 +64,7 @@ class _StubService(GoogleSearchService):
 
 _GROUNDED_OUTPUT = GoogleSearchOutput(
     query="who wrote the go language",
-    text=(
-        "Alpha [1]Beta[1,2]\n\nSources:\n"
-        "[1] First (https://first.example)\n"
-        "[2] Second (https://second.example)"
-    ),
+    text=("Alpha [1]Beta[1,2]\n\nSources:\n[1] First (https://first.example)\n[2] Second (https://second.example)"),
     sources=(
         GoogleSearchSource(index=1, title="First", uri="https://first.example"),
         GoogleSearchSource(index=2, title="Second", uri="https://second.example"),
@@ -104,23 +101,20 @@ async def _session(
                                 params=types.InitializeRequestParams(
                                     protocolVersion=REQUESTED_PROTOCOL_VERSION,
                                     capabilities=types.ClientCapabilities(),
-                                    clientInfo=types.Implementation(
-                                        name="test-client", version="0.0.0"
-                                    ),
+                                    clientInfo=types.Implementation(name="test-client", version="0.0.0"),
                                 )
                             )
                         ),
                         types.InitializeResult,
                     )
-                    await session.send_notification(
-                        types.ClientNotification(types.InitializedNotification())
-                    )
+                    await session.send_notification(types.ClientNotification(types.InitializedNotification()))
                     yield session, init
             finally:
                 tg.cancel_scope.cancel()
 
 
 async def test_initialize_negotiates_golden_protocol_and_server_info() -> None:
+    """initialize echoes the requested protocol version and the golden serverInfo."""
     golden = _load_golden("initialize.json")["result"]
     async with _session(_StubService(_GROUNDED_OUTPUT)) as (_session_obj, init):
         assert init.protocolVersion == REQUESTED_PROTOCOL_VERSION
@@ -128,7 +122,7 @@ async def test_initialize_negotiates_golden_protocol_and_server_info() -> None:
 
         golden_info = golden["serverInfo"]
         assert init.serverInfo.name == golden_info["name"]
-        assert init.serverInfo.version == golden_info["version"]
+        assert init.serverInfo.version == __version__
         assert init.serverInfo.websiteUrl == golden_info["websiteUrl"]
 
         # Capabilities are SDK-owned and diverge from the Go golden; only assert
@@ -137,6 +131,7 @@ async def test_initialize_negotiates_golden_protocol_and_server_info() -> None:
 
 
 async def test_tools_list_matches_golden_structure() -> None:
+    """tools/list matches the Go golden schemas structurally."""
     golden_tool = _load_golden("tools_list.json")["result"]["tools"][0]
     async with _session(_StubService(_GROUNDED_OUTPUT)) as (session, _init):
         result = await session.list_tools()
@@ -150,6 +145,7 @@ async def test_tools_list_matches_golden_structure() -> None:
 
 
 async def test_call_tool_returns_grounded_text_and_structured_content() -> None:
+    """tools/call returns grounded text content plus structuredContent."""
     async with _session(_StubService(_GROUNDED_OUTPUT)) as (session, _init):
         result = await session.call_tool("google_search", {"query": "any"})
 
@@ -162,6 +158,7 @@ async def test_call_tool_returns_grounded_text_and_structured_content() -> None:
 
 
 async def test_call_tool_empty_query_returns_is_error() -> None:
+    """A blank query yields isError with the exact message."""
     client = genai.Client(api_key="dummy")
     service = GoogleSearchService(model=DEFAULT_MODEL, generator=client.aio.models)
     async with _session(service) as (session, _init):

@@ -1,4 +1,4 @@
-# Copyright 2026 The mcp-gemini-google-search Authors.
+# Copyright 2026 The mcp-gemini-search Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -26,10 +26,10 @@ import anyio
 from mcp.server.lowlevel import Server
 from mcp.server.stdio import stdio_server
 
-from mcp_gemini_google_search import _logging
-from mcp_gemini_google_search.config import load_config_from_env
-from mcp_gemini_google_search.search import GoogleSearchService
-from mcp_gemini_google_search.server import create_server
+from mcp_gemini_search import _logging
+from mcp_gemini_search.config import load_config_from_env
+from mcp_gemini_search.search import GoogleSearchService
+from mcp_gemini_search.server import create_server
 
 _STARTUP_MESSAGE = "gemini google search mcp server running on stdio"
 
@@ -37,11 +37,8 @@ _STARTUP_MESSAGE = "gemini google search mcp server running on stdio"
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     """Parse command-line arguments, accepting both -logpath and --logpath."""
     parser = argparse.ArgumentParser(
-        prog="mcp-gemini-google-search",
-        description=(
-            "MCP server providing Google Search via Gemini's Grounding with "
-            "Google Search."
-        ),
+        prog="mcp-gemini-search",
+        description=("MCP server providing Google Search via Gemini's Grounding with Google Search."),
     )
     parser.add_argument(
         "-logpath",
@@ -98,9 +95,7 @@ def _run(logpath: str) -> None:
             anyio.run(_serve, server, logpath, backend_options=_backend_options())
         except Exception as e:
             _logging.logger.error("serve gemini google search mcp stdio server: %s", e)
-            raise RuntimeError(
-                f"serve gemini google search mcp stdio server: {e}"
-            ) from e
+            raise RuntimeError(f"serve gemini google search mcp stdio server: {e}") from e
     finally:
         if handle is not None:
             handle.close()
@@ -118,9 +113,7 @@ async def _serve(server: Server, logpath: str) -> None:
             tg.start_soon(_watch_signals)
         async with stdio_server() as (read_stream, write_stream):
             if logpath:
-                async with _logging.frame_logging_streams(
-                    read_stream, write_stream
-                ) as (framed_read, framed_write):
+                async with _logging.frame_logging_streams(read_stream, write_stream) as (framed_read, framed_write):
                     await server.run(framed_read, framed_write, init_options)
             else:
                 await server.run(read_stream, write_stream, init_options)

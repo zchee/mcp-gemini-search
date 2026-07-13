@@ -1,4 +1,4 @@
-# Copyright 2026 The mcp-gemini-google-search Authors.
+# Copyright 2026 The mcp-gemini-search Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Module entry point for ``python -m mcp_gemini_google_search``."""
+"""Module entry point for ``python -m mcp_gemini_search``."""
 
-from mcp_gemini_google_search.cli import main
+from mcp_gemini_search.cli import main
 
 if __name__ == "__main__":
     main()

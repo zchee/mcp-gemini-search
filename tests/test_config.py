@@ -1,4 +1,4 @@
-# Copyright 2026 The mcp-gemini-google-search Authors.
+# Copyright 2026 The mcp-gemini-search Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ import os
 
 import pytest
 
-from mcp_gemini_google_search.config import (
+from mcp_gemini_search.config import (
     DEFAULT_LOCATION,
     DEFAULT_MODEL,
     ENV_GEMINI_API_KEY,
@@ -82,6 +82,8 @@ from mcp_gemini_google_search.config import (
     ],
 )
 def test_load_config_from_env(env: dict[str, str], want: ServerConfig) -> None:
+    """Each supported environment combination resolves to the expected ServerConfig."""
+
     def getenv(key: str) -> str:
         return env.get(key, "")
 
@@ -93,18 +95,18 @@ def test_load_config_from_env(env: dict[str, str], want: ServerConfig) -> None:
     [
         (
             {},
-            '"GOOGLE_API_KEY" or "GEMINI_API_KEY" environment variable is '
-            "required when using Google AI Studio",
+            '"GOOGLE_API_KEY" or "GEMINI_API_KEY" environment variable is required when using Google AI Studio',
         ),
         (
             {ENV_GOOGLE_GENAI_USE_VERTEXAI: "true"},
-            '"GOOGLE_CLOUD_PROJECT" environment variable is required when '
-            "using Google Vertex AI",
+            '"GOOGLE_CLOUD_PROJECT" environment variable is required when using Google Vertex AI',
         ),
     ],
     ids=["missing api key", "missing vertex project"],
 )
 def test_load_config_from_env_errors(env: dict[str, str], want_err: str) -> None:
+    """Missing required variables raise ValueError with the Go-identical message."""
+
     def getenv(key: str) -> str:
         return env.get(key, "")
 
@@ -114,28 +116,33 @@ def test_load_config_from_env_errors(env: dict[str, str], want_err: str) -> None
 
 
 def test_server_config_new_client_rejects_mutually_exclusive_settings() -> None:
+    """google-genai rejects an API key combined with a Vertex project."""
     cfg = ServerConfig(model=DEFAULT_MODEL, api_key="test-key", project="project-1")
     with pytest.raises(ValueError):
         cfg.new_client()
 
 
 def test_first_non_empty() -> None:
+    """The first non-blank value wins after trimming."""
     assert _first_non_empty("", "  ", "value", "other") == "value"
 
 
 @pytest.mark.parametrize("value", ["1", "true", "TRUE", " yes ", "on"])
 def test_is_enabled_truthy(value: str) -> None:
+    """Truthy spellings enable the Vertex switch."""
     assert _is_enabled(value) is True
 
 
 @pytest.mark.parametrize("value", ["", "0", "false", "off"])
 def test_is_enabled_falsy(value: str) -> None:
+    """Falsy spellings leave the Vertex switch disabled."""
     assert _is_enabled(value) is False
 
 
 def test_new_client_resolves_gemini_backend_ignoring_vertex_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """An explicit backend bool blocks the SDK env re-derivation."""
     monkeypatch.delenv(ENV_GOOGLE_API_KEY, raising=False)
     monkeypatch.delenv(ENV_GOOGLE_GENAI_USE_VERTEXAI, raising=False)
     monkeypatch.delenv(ENV_GOOGLE_CLOUD_PROJECT, raising=False)
@@ -150,6 +157,7 @@ def test_new_client_resolves_gemini_backend_ignoring_vertex_env(
 
 
 def test_new_client_vertex_config_resolves_vertex_backend() -> None:
+    """A Vertex ServerConfig resolves to the Vertex backend."""
     config = ServerConfig(
         model=DEFAULT_MODEL,
         vertexai=True,

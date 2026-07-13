@@ -1,4 +1,4 @@
-# Copyright 2026 The mcp-gemini-google-search Authors.
+# Copyright 2026 The mcp-gemini-search Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -60,8 +60,7 @@ def load_config_from_env(getenv: Callable[[str], str]) -> ServerConfig:
         project = getenv(ENV_GOOGLE_CLOUD_PROJECT)
         if not project:
             raise ValueError(
-                f'"{ENV_GOOGLE_CLOUD_PROJECT}" environment variable is required '
-                "when using Google Vertex AI"
+                f'"{ENV_GOOGLE_CLOUD_PROJECT}" environment variable is required when using Google Vertex AI'
             )
         location = getenv(ENV_GOOGLE_CLOUD_LOCATION) or DEFAULT_LOCATION
         return ServerConfig(

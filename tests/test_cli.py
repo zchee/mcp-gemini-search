@@ -1,4 +1,4 @@
-# Copyright 2026 The mcp-gemini-google-search Authors.
+# Copyright 2026 The mcp-gemini-search Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -20,12 +20,10 @@ import sys
 
 import pytest
 
-from mcp_gemini_google_search.cli import _backend_options
+from mcp_gemini_search.cli import _backend_options
 
 
-@pytest.mark.skipif(
-    sys.platform == "win32", reason="uvloop is a non-Windows dependency"
-)
+@pytest.mark.skipif(sys.platform == "win32", reason="uvloop is a non-Windows dependency")
 def test_backend_options_enable_uvloop() -> None:
     """uvloop is installed on POSIX platforms and selected for anyio."""
     assert _backend_options() == {"use_uvloop": True}

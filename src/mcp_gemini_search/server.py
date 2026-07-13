@@ -1,4 +1,4 @@
-# Copyright 2026 The mcp-gemini-google-search Authors.
+# Copyright 2026 The mcp-gemini-search Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -21,11 +21,11 @@ from typing import Any
 from mcp import types
 from mcp.server.lowlevel import Server
 
-from mcp_gemini_google_search import __version__
-from mcp_gemini_google_search.search import GoogleSearchService
+from mcp_gemini_search import __version__
+from mcp_gemini_search.search import GoogleSearchService
 
-SERVER_NAME = "mcp-gemini-google-search"
-WEBSITE_URL = "https://github.com/zchee/mcp-gemini-google-search"
+SERVER_NAME = "mcp-gemini-search"
+WEBSITE_URL = "https://github.com/zchee/mcp-gemini-search"
 TOOL_NAME = "google_search"
 TOOL_DESCRIPTION = (
     "Performs a web search using Google Search (via the Gemini API) and returns "
@@ -60,8 +60,7 @@ _OUTPUT_SCHEMA: dict[str, Any] = {
         "text": {
             "type": "string",
             "description": (
-                "The grounded response text with inline citations and an "
-                "appended source list when available."
+                "The grounded response text with inline citations and an appended source list when available."
             ),
         },
         "sources": {
@@ -71,9 +70,7 @@ _OUTPUT_SCHEMA: dict[str, Any] = {
                 "properties": {
                     "index": {
                         "type": "integer",
-                        "description": (
-                            "The 1-based citation index shown in the response text."
-                        ),
+                        "description": ("The 1-based citation index shown in the response text."),
                     },
                     "title": {
                         "type": "string",
@@ -110,8 +107,9 @@ def create_server(service: GoogleSearchService) -> Server:
         website_url=WEBSITE_URL,
     )
 
+    # The low-level SDK awaits tool handlers, so this must stay async.
     @server.list_tools()
-    async def list_tools() -> list[types.Tool]:
+    async def list_tools() -> list[types.Tool]:  # noqa: RUF029
         return [
             types.Tool(
                 name=TOOL_NAME,
@@ -122,13 +120,9 @@ def create_server(service: GoogleSearchService) -> Server:
         ]
 
     @server.call_tool()
-    async def call_tool(
-        name: str, arguments: dict[str, Any]
-    ) -> tuple[list[types.ContentBlock], dict[str, Any]]:
+    async def call_tool(name: str, arguments: dict[str, Any]) -> tuple[list[types.ContentBlock], dict[str, Any]]:
         output = await service.search(arguments["query"])
-        content: list[types.ContentBlock] = [
-            types.TextContent(type="text", text=output.text)
-        ]
+        content: list[types.ContentBlock] = [types.TextContent(type="text", text=output.text)]
         return content, output.to_structured()
 
     return server

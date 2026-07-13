@@ -1,4 +1,4 @@
-# Copyright 2026 The mcp-gemini-google-search Authors.
+# Copyright 2026 The mcp-gemini-search Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -21,8 +21,9 @@ deselected by default and run serially with ``-m benchmark``.
 import anyio
 import pytest
 from google.genai import types
+from pytest_benchmark.fixture import BenchmarkFixture
 
-from mcp_gemini_google_search.search import (
+from mcp_gemini_search.search import (
     GoogleSearchService,
     format_grounded_response,
 )
@@ -42,15 +43,9 @@ def _benchmark_response() -> types.GenerateContentResponse:
                 ),
                 grounding_metadata=types.GroundingMetadata(
                     grounding_chunks=[
+                        types.GroundingChunk(web=types.GroundingChunkWeb(title="First", uri="https://first.example")),
                         types.GroundingChunk(
-                            web=types.GroundingChunkWeb(
-                                title="First", uri="https://first.example"
-                            )
-                        ),
-                        types.GroundingChunk(
-                            maps=types.GroundingChunkMaps(
-                                title="Second", uri="https://second.example"
-                            )
+                            maps=types.GroundingChunkMaps(title="Second", uri="https://second.example")
                         ),
                         types.GroundingChunk(
                             retrieved_context=types.GroundingChunkRetrievedContext(
@@ -58,9 +53,7 @@ def _benchmark_response() -> types.GenerateContentResponse:
                             )
                         ),
                         types.GroundingChunk(
-                            image=types.GroundingChunkImage(
-                                title="Fourth", source_uri="https://fourth.example"
-                            )
+                            image=types.GroundingChunkImage(title="Fourth", source_uri="https://fourth.example")
                         ),
                     ],
                     grounding_supports=[
@@ -79,9 +72,7 @@ def _benchmark_response() -> types.GenerateContentResponse:
     )
 
 
-def _support(
-    part_index: int, end_index: int, indices: list[int]
-) -> types.GroundingSupport:
+def _support(part_index: int, end_index: int, indices: list[int]) -> types.GroundingSupport:
     return types.GroundingSupport(
         segment=types.Segment(part_index=part_index, end_index=end_index),
         grounding_chunk_indices=indices,
@@ -103,14 +94,16 @@ class _BenchStub:
 
 
 @pytest.mark.benchmark
-def test_benchmark_format_grounded_response(benchmark) -> None:
+def test_benchmark_format_grounded_response(benchmark: BenchmarkFixture) -> None:
+    """Benchmark the grounded-response formatter."""
     resp = _benchmark_response()
     text, _ = benchmark(format_grounded_response, resp)
     assert text.startswith("Alpha [1]")
 
 
 @pytest.mark.benchmark
-def test_benchmark_google_search_service_search(benchmark) -> None:
+def test_benchmark_google_search_service_search(benchmark: BenchmarkFixture) -> None:
+    """Benchmark the full search path against a stub generator."""
     svc = GoogleSearchService("gemini-2.5-flash", _BenchStub(_benchmark_response()))
 
     def run() -> str:

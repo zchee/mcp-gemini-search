@@ -1,4 +1,4 @@
-# mcp-gemini-google-search
+# mcp-gemini-search
 
 An MCP server that provides Google Search functionality using Gemini's built-in Grounding with Google Search feature.
 
@@ -20,19 +20,19 @@ This repository ports the behavior of [`yukukotani/mcp-gemini-google-search`](ht
 Install the server as a [`uv`](https://docs.astral.sh/uv/) tool from this repository:
 
 ```bash
-uv tool install git+https://github.com/zchee/mcp-gemini-google-search
+uv tool install git+https://github.com/zchee/mcp-gemini-search
 ```
 
 Or run it without installing using `uvx`:
 
 ```bash
-uvx --from git+https://github.com/zchee/mcp-gemini-google-search mcp-gemini-google-search
+uvx --from git+https://github.com/zchee/mcp-gemini-search mcp-gemini-search
 ```
 
 Alternatively, install with `pip`:
 
 ```bash
-pip install git+https://github.com/zchee/mcp-gemini-google-search
+pip install git+https://github.com/zchee/mcp-gemini-search
 ```
 
 ## Configuration
@@ -64,13 +64,13 @@ If no model is configured, the server defaults to `gemini-3.1-pro-preview`.
 Run the server over stdio:
 
 ```bash
-mcp-gemini-google-search
+mcp-gemini-search
 ```
 
 Optional file logging. Logs are written only to the given file (stdout is reserved for the MCP protocol):
 
 ```bash
-mcp-gemini-google-search -logpath /tmp/mcp-gemini-google-search.log
+mcp-gemini-search -logpath /tmp/mcp-gemini-search.log
 ```
 
 ## Tool
