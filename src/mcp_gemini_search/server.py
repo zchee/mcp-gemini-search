@@ -62,7 +62,7 @@ _OUTPUT_SCHEMA: dict[str, Any] = {
             "type": "string",
             "description": (
                 "The grounded response text formatted as Markdown, with inline citation "
-                "links and an appended Sources section when available."
+                "markers and an appended Sources section when available."
             ),
         },
         "sources": {

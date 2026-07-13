@@ -135,10 +135,11 @@ def format_grounded_response(
     text is assembled from byte slices and decoded exactly once.
 
     Sources are numbered compactly in grounding-chunk order (chunks without a
-    title and URI are skipped), inline citations render as ``[[n]](uri)``
-    Markdown links pointing at the cited source, and a trailing ``## Sources``
-    section lists every source as an ordered list whose labels match the
-    inline citation numbers. The whole document is normalized with mdformat.
+    title and URI are skipped), inline citations render as plain ``[n]``
+    markers, and a trailing ``## Sources`` section links every source as an
+    ordered list whose labels match the inline citation numbers. Keeping the
+    markers plain and each URI in the list only minimizes token cost for LLM
+    consumers. The whole document is normalized with mdformat.
 
     Raises:
         RuntimeError: If ``resp`` is ``None`` or contains no usable text.
@@ -173,8 +174,7 @@ def format_grounded_response(
     parts = content.parts if content is not None else None
     supports = metadata.grounding_supports or []
     if parts and supports and sources:
-        uri_by_number = {source.index: source.uri for source in sources}
-        formatted = _insert_citations(text, parts, supports, number_by_chunk, uri_by_number)
+        formatted = _insert_citations(text, parts, supports, number_by_chunk)
 
     # Normalize the body on its own first: mdformat closes any dangling code
     # fence, so the appended Sources section cannot be swallowed by one.
@@ -232,9 +232,8 @@ def _insert_citations(
     parts: list[types.Part],
     supports: list[types.GroundingSupport],
     number_by_chunk: Mapping[int, int],
-    uri_by_number: Mapping[int, str],
 ) -> str:
-    """Insert Markdown citation links into ``text`` at UTF-8 byte offsets.
+    """Insert escaped ``\\[n\\]`` citation markers into ``text`` at UTF-8 byte offsets.
 
     ``number_by_chunk`` maps grounding-chunk indices to compact source numbers;
     supports citing a chunk without a usable source insert no marker.
@@ -300,7 +299,7 @@ def _insert_citations(
                 numbers.append(number)
             j += 1
 
-        result += _citation_text(numbers, uri_by_number).encode("utf-8")
+        result += _citation_text(numbers).encode("utf-8")
         last_offset = offset
         i = j
 
@@ -330,18 +329,13 @@ def _grounding_source(chunk: types.GroundingChunk | None) -> tuple[str, str]:
     return "", ""
 
 
-def _citation_text(numbers: list[int], uri_by_number: Mapping[int, str]) -> str:
-    """Render citation numbers as adjacent ``[[n]](uri)`` Markdown links.
+def _citation_text(numbers: list[int]) -> str:
+    """Render citation numbers as adjacent escaped ``\\[n\\]`` markers.
 
-    Numbers without a usable URI (missing or with a non-allowlisted scheme)
-    render as escaped ``\\[n\\]`` markers so surrounding body text can never
-    capture them into a link; an empty list renders as an empty string.
+    Markers are plain text, never links: the URI lives once in the
+    ``## Sources`` list, which keeps token cost low for LLM consumers. The
+    escaping stops surrounding body text (parentheticals, reference
+    definitions) from capturing a marker into a link; mdformat drops the
+    backslashes wherever that is provably safe.
     """
-    pieces: list[str] = []
-    for number in numbers:
-        uri = uri_by_number.get(number, "")
-        if uri and _markdown.is_safe_uri(uri):
-            pieces.append(f"[[{number}]]({_markdown.format_destination(uri)})")
-        else:
-            pieces.append(f"\\[{number}\\]")
-    return "".join(pieces)
+    return "".join(f"\\[{number}\\]" for number in numbers)

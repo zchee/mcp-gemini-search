@@ -65,8 +65,7 @@ class _StubService(GoogleSearchService):
 _GROUNDED_OUTPUT = GoogleSearchOutput(
     query="who wrote the go language",
     text=(
-        "Alpha [[1]](https://first.example)Beta[[1]](https://first.example)[[2]](https://second.example)"
-        "\n\n## Sources\n\n1. [First](https://first.example)\n2. [Second](https://second.example)"
+        "Alpha [1]Beta[1][2]\n\n## Sources\n\n1. [First](https://first.example)\n2. [Second](https://second.example)"
     ),
     sources=(
         GoogleSearchSource(index=1, title="First", uri="https://first.example"),

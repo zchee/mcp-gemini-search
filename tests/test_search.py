@@ -122,7 +122,7 @@ async def test_search_happy_path() -> None:
     got = await svc.search("golang")
 
     assert got.query == "golang"
-    assert got.text == "Answer[[1]](https://example.com)\n\n## Sources\n\n1. [Example](https://example.com)"
+    assert got.text == "Answer[1]\n\n## Sources\n\n1. [Example](https://example.com)"
     assert len(got.sources) == 1
     assert stub.got_model == "gemini-2.5-flash"
 
@@ -199,8 +199,7 @@ def test_format_grounded_response() -> None:
     text, sources = format_grounded_response(resp)
 
     assert text == (
-        "Alpha [[1]](https://first.example)Beta[[1]](https://first.example)[[2]](https://second.example)"
-        "\n\n## Sources\n\n1. [First](https://first.example)\n2. [Second](https://second.example)"
+        "Alpha [1]Beta[1][2]\n\n## Sources\n\n1. [First](https://first.example)\n2. [Second](https://second.example)"
     )
     assert len(sources) == 2
     assert sources[1].title == "Second"
@@ -238,10 +237,7 @@ def test_format_grounded_response_orders_and_deduplicates_citations() -> None:
 
     text, sources = format_grounded_response(resp)
 
-    assert text == (
-        "Alpha [[1]](https://one.example)Beta[[1]](https://one.example)[[2]](https://two.example)"
-        "\n\n## Sources\n\n1. [One](https://one.example)\n2. [Two](https://two.example)"
-    )
+    assert text == ("Alpha [1]Beta[1][2]\n\n## Sources\n\n1. [One](https://one.example)\n2. [Two](https://two.example)")
     assert len(sources) == 2
 
 
@@ -283,22 +279,17 @@ def test_grounding_source(chunk: types.GroundingChunk | None, expected: tuple[st
     assert _grounding_source(chunk) == expected
 
 
-_CITATION_URIS = {1: "https://one.example", 2: "https://two.example", 4: "javascript:alert(1)"}
-
-
 @pytest.mark.parametrize(
     ("numbers", "expected"),
     [
         ([], ""),
-        ([1, 2], "[[1]](https://one.example)[[2]](https://two.example)"),
+        ([1, 2], "\\[1\\]\\[2\\]"),
         ([3], "\\[3\\]"),
-        ([1, 3], "[[1]](https://one.example)\\[3\\]"),
-        ([4], "\\[4\\]"),
     ],
 )
 def test_citation_text(numbers: list[int], expected: str) -> None:
-    """Citation numbers render as adjacent links, or escaped markers otherwise."""
-    assert _citation_text(numbers, _CITATION_URIS) == expected
+    """Citation numbers render as adjacent escaped plain-text markers."""
+    assert _citation_text(numbers) == expected
 
 
 def test_citation_marker_multibyte_japanese() -> None:
@@ -311,7 +302,7 @@ def test_citation_marker_multibyte_japanese() -> None:
             [_support(0, 9, [0])],
         )
     )
-    assert text == "日本語[[1]](https://j.example)のテキスト\n\n## Sources\n\n1. [J](https://j.example)"
+    assert text == "日本語[1]のテキスト\n\n## Sources\n\n1. [J](https://j.example)"
 
 
 def test_citation_marker_japanese_ascii_multipart() -> None:
@@ -324,10 +315,7 @@ def test_citation_marker_japanese_ascii_multipart() -> None:
             [_support(0, 6, [0]), _support(1, 4, [1])],
         )
     )
-    assert text == (
-        "日本[[1]](https://x.example)test[[2]](https://y.example)"
-        "\n\n## Sources\n\n1. [W](https://x.example)\n2. [Y](https://y.example)"
-    )
+    assert text == ("日本[1]test[2]\n\n## Sources\n\n1. [W](https://x.example)\n2. [Y](https://y.example)")
 
 
 def test_citation_marker_emoji_boundary() -> None:
@@ -340,7 +328,7 @@ def test_citation_marker_emoji_boundary() -> None:
             [_support(0, 4, [0])],
         )
     )
-    assert text == "\U0001f600[[1]](https://e.example)ok\n\n## Sources\n\n1. [E](https://e.example)"
+    assert text == "\U0001f600[1]ok\n\n## Sources\n\n1. [E](https://e.example)"
 
 
 def test_end_index_equals_byte_length_accepted() -> None:
@@ -353,7 +341,7 @@ def test_end_index_equals_byte_length_accepted() -> None:
             [_support(0, 5, [0])],
         )
     )
-    assert text == "café[[1]](https://c.example)\n\n## Sources\n\n1. [C](https://c.example)"
+    assert text == "café[1]\n\n## Sources\n\n1. [C](https://c.example)"
 
 
 def test_end_index_beyond_byte_length_skipped() -> None:
@@ -380,10 +368,7 @@ def test_thought_part_excluded_and_offsets_aligned() -> None:
         )
     )
     assert "THOUGHT" not in text
-    assert text == (
-        "Alpha [[1]](https://x.example)Beta[[2]](https://y.example)"
-        "\n\n## Sources\n\n1. [W](https://x.example)\n2. [Y](https://y.example)"
-    )
+    assert text == ("Alpha [1]Beta[2]\n\n## Sources\n\n1. [W](https://x.example)\n2. [Y](https://y.example)")
 
 
 def test_empty_source_skipped_and_sources_renumbered() -> None:
@@ -412,7 +397,7 @@ def test_support_citing_skipped_chunk_inserts_no_marker() -> None:
         )
     )
     assert [source.index for source in sources] == [1]
-    assert text == "hello[[1]](https://b.example)\n\n## Sources\n\n1. [B](https://b.example)"
+    assert text == "hello[1]\n\n## Sources\n\n1. [B](https://b.example)"
 
 
 def test_body_markdown_normalized() -> None:

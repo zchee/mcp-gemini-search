@@ -98,7 +98,7 @@ def test_benchmark_format_grounded_response(benchmark: BenchmarkFixture) -> None
     """Benchmark the grounded-response formatter."""
     resp = _benchmark_response()
     text, _ = benchmark(format_grounded_response, resp)
-    assert text.startswith("Alpha [[1]](")
+    assert text.startswith("Alpha [1]")
 
 
 @pytest.mark.benchmark
@@ -110,4 +110,4 @@ def test_benchmark_google_search_service_search(benchmark: BenchmarkFixture) -> 
         return anyio.run(svc.search, "latest golang release notes").text
 
     text = benchmark(run)
-    assert text.startswith("Alpha [[1]](")
+    assert text.startswith("Alpha [1]")
