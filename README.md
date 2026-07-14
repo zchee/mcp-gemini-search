@@ -1,17 +1,27 @@
 # mcp-gemini-search
 
-An MCP server that provides Google Search functionality using Gemini's built-in Grounding with Google Search feature.
+An MCP stdio server for Google-grounded Gemini answers and asynchronous Gemini Deep Research reports.
 
-This repository ports the behavior of [`yukukotani/mcp-gemini-google-search`](https://github.com/yukukotani/mcp-gemini-google-search). This is the Python implementation, built on the official [`google-genai`](https://googleapis.github.io/python-genai/) SDK for Gemini API and Vertex AI access and the official [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk) low-level server over stdio.
+This repository ports the behavior of [`yukukotani/mcp-gemini-google-search`](https://github.com/yukukotani/mcp-gemini-google-search) and extends it with Deep Research. The Python implementation uses the official [`google-genai`](https://googleapis.github.io/python-genai/) SDK for Gemini API and Vertex AI access and the official [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk) low-level server.
 
 ## Features
 
-- Exposes `google_search`, `deep_research`, and `deep_research_result` as standard tools
-- Uses Gemini's built-in Google Search grounding tool through the [Interactions API](https://ai.google.dev/gemini-api/docs/interactions) (`client.interactions.create`), currently in Beta
-- Optionally enables the built-in [URL context](https://ai.google.dev/gemini-api/docs/interactions/url-context) and [code execution](https://ai.google.dev/gemini-api/docs/interactions/code-execution) tools alongside search grounding
-- Stateless by design: every search is a single-shot interaction sent with `store=false`, so requests are never retained as server-side interaction history
-- Returns the grounded response as clean Markdown: inline `[n]` citation markers plus a linked, ordered source list under a `## Sources` heading, normalized with [`mdformat`](https://github.com/hukkin/mdformat) (GitHub-flavored Markdown)
-- Supports both Google AI Studio and Vertex AI
+- Always advertises three standard tools: `google_search`, `deep_research`, and `deep_research_result`
+- Runs Google Search grounding through the [Interactions API](https://ai.google.dev/gemini-api/docs/interactions)
+- Optionally enables [URL context](https://ai.google.dev/gemini-api/docs/interactions/url-context) and [code execution](https://ai.google.dev/gemini-api/docs/interactions/code-execution) per server or per search request
+- Sends every `google_search` as an independent interaction with `store=false`
+- Starts Deep Research as a provider-managed background interaction and returns a durable `interaction_id` immediately
+- Returns readable text content plus schema-backed `structuredContent`; failures are readable MCP tool errors rather than opaque protocol errors
+- Formats successful answers and reports as GitHub-flavored Markdown with inline `[n]` markers and a linked `## Sources` list
+- Supports Google AI Studio and Vertex AI
+
+## Choose a tool
+
+| Need                                                               | Tool                   | Behavior                                                                                            |
+| ------------------------------------------------------------------ | ---------------------- | --------------------------------------------------------------------------------------------------- |
+| A current fact, focused lookup, URL inspection, or computed answer | `google_search`        | Returns one grounded answer synchronously. Refine and call again if needed.                         |
+| A comprehensive comparison, survey, or long report                 | `deep_research`        | Starts one billed background run and returns its `interaction_id`; it does not wait for the report. |
+| Progress or the final report for an existing run                   | `deep_research_result` | Fetches or long-polls by `interaction_id`; it never starts another research run.                    |
 
 ## Requirements
 
@@ -23,19 +33,40 @@ This repository ports the behavior of [`yukukotani/mcp-gemini-google-search`](ht
 Install the server as a [`uv`](https://docs.astral.sh/uv/) tool from this repository:
 
 ```bash
-uv tool install git+https://github.com/zchee/mcp-gemini-search
+uv tool install --prerelease=allow git+https://github.com/zchee/mcp-gemini-search
 ```
 
 Or run it without installing using `uvx`:
 
 ```bash
-uvx --from git+https://github.com/zchee/mcp-gemini-search mcp-gemini-search
+uvx --prerelease=allow --from git+https://github.com/zchee/mcp-gemini-search mcp-gemini-search
 ```
 
 Alternatively, install with `pip`:
 
 ```bash
-pip install git+https://github.com/zchee/mcp-gemini-search
+pip install --pre git+https://github.com/zchee/mcp-gemini-search
+```
+
+### Bundled Codex plugin configuration
+
+The bundled Codex plugin exposes the authentication environment variables from the client process and uses:
+
+```json
+{
+  "mcpServers": {
+    "mcp-gemini-search": {
+      "command": "uvx",
+      "args": [
+        "--prerelease=allow",
+        "--from",
+        "git+https://github.com/zchee/mcp-gemini-search",
+        "mcp-gemini-search"
+      ],
+      "startup_timeout_sec": 60
+    }
+  }
+}
 ```
 
 ## Configuration
@@ -62,6 +93,20 @@ export GEMINI_MODEL="gemini-3.1-pro-preview"     # optional
 
 If no model is configured, the server defaults to `gemini-3.1-pro-preview`.
 
+### Environment reference
+
+| Variable                       | Default                         | Behavior                                                      |
+| ------------------------------ | ------------------------------- | ------------------------------------------------------------- |
+| `GOOGLE_API_KEY`               | none                            | Google AI Studio key; takes precedence over `GEMINI_API_KEY`. |
+| `GEMINI_API_KEY`               | none                            | Google AI Studio key used when `GOOGLE_API_KEY` is empty.     |
+| `GEMINI_MODEL`                 | `gemini-3.1-pro-preview`        | Model used by `google_search`.                                |
+| `GOOGLE_GENAI_USE_VERTEXAI`    | disabled                        | Selects Vertex AI when set to a recognized truthy value.      |
+| `GOOGLE_CLOUD_PROJECT`         | none                            | Required when Vertex AI is enabled.                           |
+| `GOOGLE_CLOUD_LOCATION`        | `global`                        | Vertex AI location.                                           |
+| `GEMINI_ENABLE_URL_CONTEXT`    | disabled                        | Server default for URL context on `google_search`.            |
+| `GEMINI_ENABLE_CODE_EXECUTION` | disabled                        | Server default for code execution on `google_search`.         |
+| `GEMINI_DEEP_RESEARCH_AGENT`   | `deep-research-preview-04-2026` | Server default for `deep_research`.                           |
+
 ### Optional built-in tools
 
 The Gemini `url_context` and `code_execution` built-in tools can be enabled alongside Google Search grounding. The environment variables below set the server-wide defaults, which individual `google_search` requests can override for one call. Both defaults are disabled when the variables are unset:
@@ -73,7 +118,7 @@ export GEMINI_ENABLE_CODE_EXECUTION="1" # let the model run Python for computati
 
 Both flags accept the same truthy spellings as `GOOGLE_GENAI_USE_VERTEXAI` (`1`, `true`, `yes`, `on`; case-insensitive). Enabled tools can increase token usage, and on Gemini 3 models Google Search grounding is billed per executed search query.
 
-## Usage
+## Running
 
 Run the server over stdio:
 
@@ -84,8 +129,10 @@ mcp-gemini-search
 Optional file logging. Logs are written only to the given file (stdout is reserved for the MCP protocol):
 
 ```bash
-mcp-gemini-search -logpath /tmp/mcp-gemini-search.log
+mcp-gemini-search --logpath /tmp/mcp-gemini-search.log
 ```
+
+Both `-logpath` and `--logpath` are accepted. Without this option the server does not emit routine logs; fatal startup errors still go to stderr.
 
 ## Deep Research
 
@@ -95,7 +142,23 @@ The server uses `deep-research-preview-04-2026` by default. Select the more exha
 export GEMINI_DEEP_RESEARCH_AGENT="deep-research-max-preview-04-2026"
 ```
 
-Deep Research uses a two-tool start/poll workflow. `deep_research` starts a background run and immediately returns its `interaction_id` and initial `status`; it never waits for the multi-minute run to finish. Poll the same run with `deep_research_result`, passing the `interaction_id`. Its optional `wait_seconds` parameter long-polls for 0-60 seconds and defaults to 0. Continue polling until the status is `completed`, `failed`, or `cancelled`; a completed result contains the formatted Markdown report and cited sources.
+Deep Research uses a two-tool start/poll workflow. `deep_research` starts a background run and immediately returns its `interaction_id` and initial `status`; it never waits for the multi-minute run to finish. Save that id before doing anything else: it is the only handle accepted by `deep_research_result`.
+
+```text
+deep_research(query)
+        |
+        v
+interaction_id + initial status
+        |
+        v
+deep_research_result(interaction_id, wait_seconds=60)
+        |
+        +-- non-terminal status -> poll the same interaction_id again
+        +-- completed           -> Markdown text + optional sources
+        `-- failed/cancelled    -> MCP tool error; stop polling
+```
+
+`deep_research_result` defaults to `wait_seconds=0`, which performs one immediate status fetch. Use `wait_seconds=60` while waiting for completion: the server rechecks the interaction about every five seconds for up to one minute, reducing client round-trips. Any non-terminal response contains `interaction_id` and `status`; a completed response also contains the Markdown report and any cited sources. A failed or cancelled run is returned as `isError=true` with a readable failure message, not as a normal structured status result.
 
 Example transcript:
 
@@ -115,9 +178,11 @@ The configured agents are preview-tier Gemini agents, so their names and behavio
 > [!WARNING]
 > Every `deep_research` call starts a multi-minute, billed, multi-step agent run. Never call `deep_research` twice for the same question; retain the returned `interaction_id` and poll `deep_research_result` instead.
 
-Background execution requires server-side interaction storage: `store=false` is incompatible with `background=true`. On the paid tier, Deep Research interactions are retained for approximately 55 days. This is a privacy and retention difference from the stateless `google_search` tool, whose single-shot interactions are sent with `store=false`.
+`plan_only=true` starts a collaborative-planning interaction rather than immediately producing the full report. Poll that interaction to retrieve the plan, then approve or refine it with a new `deep_research` call whose `previous_interaction_id` is the plan's id. The same field creates a follow-up that builds on a completed run. Each approval, refinement, or follow-up call creates a new interaction and returns a new id.
 
-## Tool
+Deep Research is stateful at the provider because the background run must be retrieved later by id. Treat research prompts and reports according to the current retention policy of your Gemini API or Vertex AI account. This differs from `google_search`, which explicitly sends `store=false`.
+
+## Tool reference
 
 ### `google_search`
 
@@ -131,8 +196,11 @@ Parameters:
 
 Output:
 
-- `text` (string): The grounded response formatted as Markdown. Inline citations render as plain `[n]` markers whose numbers match the linked, ordered source list appended under a `## Sources` heading; each source URI appears exactly once, keeping token cost low for LLM consumers. The whole document is normalized with `mdformat` (GFM).
-- `sources` (array): The cited sources, each with its 1-based citation `index` plus `title` and `uri` when available.
+- `query` (string): The original query.
+- `text` (string): The grounded response formatted as Markdown. Inline citations render as plain `[n]` markers whose numbers match the linked, ordered source list appended under a `## Sources` heading; each source URI appears exactly once. The whole document is normalized with `mdformat` (GFM).
+- `sources` (array, optional): Cited sources. Each source always has a 1-based `index`; `title` and `uri` are included only when available. The key is omitted when the answer has no usable citations.
+
+The MCP text content is the same Markdown stored in `structuredContent.text`.
 
 ### `deep_research`
 
@@ -148,7 +216,9 @@ Parameters:
 Output:
 
 - `interaction_id` (string): The durable identifier to pass to `deep_research_result`.
-- `status` (string): The initial interaction status, typically `in_progress`.
+- `status` (string): The provider's initial interaction status, normally `in_progress`.
+
+The MCP text content also names the `interaction_id`, the status, and the required next tool so clients do not have to decode `structuredContent` before preserving the id.
 
 ### `deep_research_result`
 
@@ -162,9 +232,23 @@ Parameters:
 Output:
 
 - `interaction_id` (string): The fetched interaction identifier.
-- `status` (string): `in_progress`, `requires_action`, `completed`, `failed`, or `cancelled`.
+- `status` (string): The current non-terminal status, or `completed`. Non-terminal provider statuses are returned as-is.
 - `text` (string, completed results only): The formatted Markdown report.
-- `sources` (array, completed results only): The cited sources.
+- `sources` (array, optional, completed results only): Cited sources; omitted when the report has none.
+
+For a non-terminal status, the MCP text content is a progress message. For `completed`, it is the full report. `failed` and `cancelled` are terminal MCP tool errors and therefore do not produce normal structured output.
+
+## Input validation and errors
+
+All three input schemas reject missing required fields, wrong types, and unknown properties. The server validates arguments before dispatch and returns failures as ordinary MCP tool results with `isError=true` and readable text:
+
+- `Invalid arguments for <tool>: ...` for schema violations
+- `search query cannot be empty` or `research query cannot be empty` for blank queries
+- `interaction id cannot be empty` for a blank Deep Research id
+- `google search failed: ...` or `deep research failed: ...` for backend failures
+- `deep research cancelled` or `deep research <status>: <detail>` for terminal research failures
+
+Callers should inspect `isError` before reading `structuredContent`.
 
 ## Development
 
