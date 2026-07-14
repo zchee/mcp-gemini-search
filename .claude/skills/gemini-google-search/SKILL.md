@@ -6,76 +6,62 @@ description: Drive the google_search tool of the mcp-gemini-search MCP server �
 # google_search (mcp-gemini-search)
 
 `google_search` runs one Google-Search-grounded Gemini interaction and returns
-the grounded answer. Depending on how the server is registered, the tool may
+a Markdown answer with inline `[n]` citation markers and a numbered
+`## Sources` list. Depending on how the server is registered, the tool may
 appear as `mcp__mcp-gemini-search__google_search` or under another server
 alias — match on the trailing `google_search`.
 
-## When to use it (and when not)
+The tool's own schema documents its parameters (`query`, `url_context`,
+`code_execution`) and when to flip each flag — trust it. This skill covers
+what the schema cannot: choosing this tool, composing queries, and relaying
+results without destroying their verifiability.
 
-- Use for current events, fresh facts, version/release checks, and any claim
-  that needs verifiable web sources. Results carry real URLs you can cite.
-- Do NOT use it for long multi-source investigations that need a structured
-  report — that is the `deep_research` tool (see the `gemini-deep-research`
-  skill). A good heuristic: if the user wants an *answer*, search; if they
-  want a *report*, research.
-- Prefer it over unsourced recall for anything time-sensitive: your training
-  data is stale, the grounded answer is not.
+## Answer vs. report
 
-## Calling contract
+Use `google_search` when the user wants an *answer*: current events, fresh
+facts, version/release checks, any claim that needs verifiable sources.
+Prefer it over unsourced recall for anything time-sensitive — training data
+is stale, the grounded answer is not.
 
-Input (`additionalProperties: false` — anything else is rejected):
+When the user wants a *document* — a multi-source comparison, survey, or
+due-diligence investigation — use the `deep_research` tool instead (see the
+`gemini-deep-research` skill).
 
-| field | type | meaning |
-|---|---|---|
-| `query` (required) | string | Natural-language question. Specific names, versions, and dates sharpen results. |
-| `url_context` | boolean | `true` lets the model open and read URLs written in the query. Omit to use the server default (`GEMINI_ENABLE_URL_CONTEXT`). |
-| `code_execution` | boolean | `true` lets the model write and run Python for real computation. Omit to use the server default (`GEMINI_ENABLE_CODE_EXECUTION`). |
+## Every query must be self-contained
 
-Set `url_context=true` exactly when the query itself contains URLs the model
-should fetch ("summarize https://…", "compare these two pages"). Set
-`code_execution=true` when the answer requires computation — unit conversion
-over fetched data, aggregating numbers, date math — not plain retrieval.
-Passing an explicit `false` deliberately disables a server-side default for
-one call.
+The server is stateless (`store=false`): there is no conversation memory, and
+the model never sees your previous queries.
 
-## Each call is one independent search
+- Never write "the library mentioned above" — name it every time.
+- Pack the disambiguators into the query itself: exact version, year, product
+  name, the verbatim error string.
+- A miss is normal: refine the query and call again. A second, sharper query
+  beats guessing — but keep queries purposeful; grounding on Gemini 3 models
+  is billed per executed search.
 
-The server is stateless (`store=false`): there is no conversation memory
-between calls, and the model never sees your previous queries. Consequences:
+## Fan out multi-facet questions
 
-- Every query must be self-contained. Never write "the library mentioned
-  above" — name it.
-- If the answer misses, refine the query (add the version, the year, the
-  exact error string) and call again. Iterating is cheap and expected.
-- For multi-facet questions, fan out several independent calls in parallel
-  (one facet per query) instead of one overloaded query.
+One facet per query, issued as parallel calls — not one overloaded query.
+"Compare X's and Y's latest releases" is two searches (X's release, Y's
+release), not one. Calls are independent, so parallel fan-out costs no
+correctness and saves wall-clock time.
 
-Google Search grounding on Gemini 3 models is billed per executed search
-query, so keep queries purposeful — but a second, sharper query beats
-guessing.
+## Preserve citations when relaying — the step most often skipped
 
-## Reading the result
-
-The text content is Markdown: claims carry inline `[n]` markers that map to a
-numbered `## Sources` section of links at the end. The structured content
-mirrors it:
-
-```json
-{"query": "...", "text": "markdown with [n] markers", "sources": [{"index": 1, "title": "...", "uri": "https://..."}]}
-```
-
-`sources` may be `null` or absent when nothing was cited. When relaying the
-answer, keep the claim→source mapping intact: either preserve the `[n]`
-markers with their links or attach the `uri` next to each claim. Do not strip
-citations and present the text as your own knowledge.
+The text's inline `[n]` markers map to the numbered `## Sources` entries,
+mirrored in structured content as `{index, title, uri}` objects. When you
+relay the answer, keep the claim→source mapping intact: preserve the markers
+with their links, or attach each `uri` next to the claim it supports. Never
+strip the citations and present the text as your own knowledge —
+verifiability is the entire point of a grounded search, and it is the first
+thing lost when answers get paraphrased.
 
 ## Errors
 
 Failures come back as tool errors with readable text, not protocol errors —
 read the message and self-correct:
 
-- `Invalid arguments for google_search: …` — you violated the input schema
-  (unknown key, wrong type). Fix the arguments; do not retry verbatim.
-- `search query cannot be empty` — send a real query.
+- `Invalid arguments for google_search: …` — you violated the input schema;
+  fix the arguments, never retry verbatim.
 - `google search failed: …` — backend/API failure; retry once, then surface
   the error to the user instead of looping.
