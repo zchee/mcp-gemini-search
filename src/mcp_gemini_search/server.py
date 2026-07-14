@@ -77,7 +77,21 @@ _INPUT_SCHEMA: dict[str, Any] = {
         "query": {
             "type": "string",
             "description": "The search query to find information on the web.",
-        }
+        },
+        "url_context": {
+            "type": "boolean",
+            "description": (
+                "Override the server default (GEMINI_ENABLE_URL_CONTEXT) for this "
+                "request only: let the model fetch URLs mentioned in the query."
+            ),
+        },
+        "code_execution": {
+            "type": "boolean",
+            "description": (
+                "Override the server default (GEMINI_ENABLE_CODE_EXECUTION) for this "
+                "request only: let the model run Python for computational answers."
+            ),
+        },
     },
     "required": ["query"],
     "additionalProperties": False,
@@ -285,7 +299,11 @@ def create_server(
     async def call_tool(name: str, arguments: dict[str, Any]) -> tuple[list[types.ContentBlock], dict[str, Any]]:
         match name:
             case ToolName.GOOGLE_SEARCH:
-                output = await service.search(arguments["query"])
+                output = await service.search(
+                    arguments["query"],
+                    url_context=arguments.get("url_context"),
+                    code_execution=arguments.get("code_execution"),
+                )
                 content: list[types.ContentBlock] = [types.TextContent(type="text", text=output.text)]
                 return content, output.to_structured()
 

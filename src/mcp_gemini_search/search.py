@@ -101,6 +101,8 @@ class GoogleSearchService:
         """Store the model name, the injected interactions API, and the tool set."""
         self._model = model
         self._interactions = interactions
+        self._url_context = url_context
+        self._code_execution = code_execution
         tools: list[dict[str, str]] = [{"type": "google_search"}]
         if url_context:
             tools.append({"type": "url_context"})
@@ -118,12 +120,28 @@ class GoogleSearchService:
         """Return the tool declarations sent with every interaction request."""
         return tuple(self._tools)
 
-    async def search(self, query: str) -> GoogleSearchOutput:
+    async def search(
+        self,
+        query: str,
+        *,
+        url_context: bool | None = None,
+        code_execution: bool | None = None,
+    ) -> GoogleSearchOutput:
         """Run a grounded Google Search for ``query`` and return the output.
 
         Every search is a stateless single-shot request (``store=False``): no
         follow-up turn ever references the interaction, so nothing needs the
         server-side history that storing would retain.
+
+        Args:
+            query: The search query to send to the model.
+            url_context: Whether to let the model fetch URLs mentioned in the
+                query. ``None`` uses the server-configured default; a boolean
+                overrides that default for this request only.
+            code_execution: Whether to let the model run Python for
+                computational answers. ``None`` uses the server-configured
+                default; a boolean overrides that default for this request
+                only.
 
         Raises:
             RuntimeError: If the service is not configured, if the backend call
@@ -135,11 +153,19 @@ class GoogleSearchService:
         if not query.strip():
             raise ValueError("search query cannot be empty")
 
+        effective_url_context = self._url_context if url_context is None else url_context
+        effective_code_execution = self._code_execution if code_execution is None else code_execution
+        tools: list[dict[str, str]] = [{"type": "google_search"}]
+        if effective_url_context:
+            tools.append({"type": "url_context"})
+        if effective_code_execution:
+            tools.append({"type": "code_execution"})
+
         try:
             interaction = await self._interactions.create(
                 model=self._model,
                 input=query,
-                tools=self._tools,
+                tools=tools,
                 store=False,
             )
         except Exception as e:

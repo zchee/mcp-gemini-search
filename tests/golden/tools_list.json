@@ -11,6 +11,14 @@
             "query": {
               "type": "string",
               "description": "The search query to find information on the web."
+            },
+            "url_context": {
+              "type": "boolean",
+              "description": "Override the server default (GEMINI_ENABLE_URL_CONTEXT) for this request only: let the model fetch URLs mentioned in the query."
+            },
+            "code_execution": {
+              "type": "boolean",
+              "description": "Override the server default (GEMINI_ENABLE_CODE_EXECUTION) for this request only: let the model run Python for computational answers."
             }
           },
           "required": [

@@ -105,31 +105,72 @@ async def test_search_happy_path() -> None:
 
 
 @pytest.mark.parametrize(
-    ("url_context", "code_execution", "want"),
+    (
+        "default_url_context",
+        "default_code_execution",
+        "url_context",
+        "code_execution",
+        "want",
+    ),
     [
-        (False, False, [{"type": "google_search"}]),
-        (True, False, [{"type": "google_search"}, {"type": "url_context"}]),
-        (False, True, [{"type": "google_search"}, {"type": "code_execution"}]),
+        (False, False, None, None, [{"type": "google_search"}]),
         (
+            True,
+            True,
+            None,
+            None,
+            [{"type": "google_search"}, {"type": "url_context"}, {"type": "code_execution"}],
+        ),
+        (False, False, True, None, [{"type": "google_search"}, {"type": "url_context"}]),
+        (False, False, None, True, [{"type": "google_search"}, {"type": "code_execution"}]),
+        (True, True, False, None, [{"type": "google_search"}, {"type": "code_execution"}]),
+        (True, True, None, False, [{"type": "google_search"}, {"type": "url_context"}]),
+        (
+            False,
+            False,
             True,
             True,
             [{"type": "google_search"}, {"type": "url_context"}, {"type": "code_execution"}],
         ),
+        (True, True, False, False, [{"type": "google_search"}]),
+        (True, False, None, True, [{"type": "google_search"}, {"type": "url_context"}, {"type": "code_execution"}]),
+        (False, True, True, None, [{"type": "google_search"}, {"type": "url_context"}, {"type": "code_execution"}]),
     ],
-    ids=["search only", "url context", "code execution", "all tools"],
+    ids=[
+        "defaults off",
+        "defaults on",
+        "enable url context",
+        "enable code execution",
+        "disable url context",
+        "disable code execution",
+        "enable both",
+        "disable both",
+        "code override preserves url default",
+        "url override preserves code default",
+    ],
 )
 @pytest.mark.anyio
-async def test_search_tool_selection(url_context: bool, code_execution: bool, want: list[dict[str, str]]) -> None:
-    """Optional tool flags append their tool declarations in a stable order."""
+async def test_search_tool_selection(
+    default_url_context: bool,
+    default_code_execution: bool,
+    url_context: bool | None,
+    code_execution: bool | None,
+    want: list[dict[str, str]],
+) -> None:
+    """Per-request tool overrides fall back independently in stable order."""
     stub = StubInteractions(interaction=_interaction(_output(_text("ok"))))
     svc = GoogleSearchService(
         "gemini-3.5-flash",
         stub,
+        url_context=default_url_context,
+        code_execution=default_code_execution,
+    )
+
+    await svc.search(
+        "golang",
         url_context=url_context,
         code_execution=code_execution,
     )
-
-    await svc.search("golang")
 
     assert stub.got_tools == want
 

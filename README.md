@@ -63,7 +63,7 @@ If no model is configured, the server defaults to `gemini-3.1-pro-preview`.
 
 ### Optional built-in tools
 
-The Gemini `url_context` and `code_execution` built-in tools can be enabled alongside Google Search grounding. Both are disabled by default:
+The Gemini `url_context` and `code_execution` built-in tools can be enabled alongside Google Search grounding. The environment variables below set the server-wide defaults, which individual `google_search` requests can override for one call. Both defaults are disabled when the variables are unset:
 
 ```bash
 export GEMINI_ENABLE_URL_CONTEXT="1"    # let the model fetch URLs mentioned in the query
@@ -125,6 +125,8 @@ Performs a web search using Google Search (via the Gemini API) and returns the g
 Parameters:
 
 - `query` (string, required): The search query to find information on the web.
+- `url_context` (boolean, optional): Override the `GEMINI_ENABLE_URL_CONTEXT` server default for this call only.
+- `code_execution` (boolean, optional): Override the `GEMINI_ENABLE_CODE_EXECUTION` server default for this call only.
 
 Output:
 

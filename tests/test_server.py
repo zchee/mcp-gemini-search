@@ -64,8 +64,20 @@ class _StubService(GoogleSearchService):
     def __init__(self, output: GoogleSearchOutput) -> None:
         super().__init__(model=DEFAULT_MODEL, interactions=None)
         self._output = output
+        self.search_calls: list[dict[str, Any]] = []
 
-    async def search(self, query: str) -> GoogleSearchOutput:
+    async def search(
+        self,
+        query: str,
+        *,
+        url_context: bool | None = None,
+        code_execution: bool | None = None,
+    ) -> GoogleSearchOutput:
+        self.search_calls.append({
+            "query": query,
+            "url_context": url_context,
+            "code_execution": code_execution,
+        })
         return self._output
 
 
@@ -197,6 +209,41 @@ async def test_call_tool_returns_grounded_text_and_structured_content() -> None:
     assert isinstance(block, types.TextContent)
     assert block.text == _GROUNDED_OUTPUT.text
     assert result.structuredContent == _GROUNDED_OUTPUT.to_structured()
+
+
+async def test_call_google_search_passes_tool_overrides() -> None:
+    """google_search passes explicit per-request tool overrides to the service."""
+    service = _StubService(_GROUNDED_OUTPUT)
+    async with _session(service) as (session, _init):
+        result = await session.call_tool(
+            "google_search",
+            {"query": "any", "url_context": True, "code_execution": False},
+        )
+
+    assert not result.isError
+    assert service.search_calls == [
+        {
+            "query": "any",
+            "url_context": True,
+            "code_execution": False,
+        }
+    ]
+
+
+async def test_call_google_search_defaults_tool_overrides_to_none() -> None:
+    """google_search passes None tool overrides when both arguments are omitted."""
+    service = _StubService(_GROUNDED_OUTPUT)
+    async with _session(service) as (session, _init):
+        result = await session.call_tool("google_search", {"query": "any"})
+
+    assert not result.isError
+    assert service.search_calls == [
+        {
+            "query": "any",
+            "url_context": None,
+            "code_execution": None,
+        }
+    ]
 
 
 async def test_call_tool_empty_query_returns_is_error() -> None:
