@@ -26,8 +26,9 @@ requires-python = ">=3.13"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
 dependencies = [
-    "mcp>=1.28.1",
+    "mcp[cli]==2.0.0b1",
     "google-genai[aiohttp]>=2.11.0",
+    "jsonschema>=4.26.0",
     "orjson>=3.11.9",
     "uvloop>=0.22.1 ; sys_platform != 'win32'",
     "mdformat>=1.0.0",
@@ -42,10 +43,10 @@ Repository = "https://github.com/zchee/mcp-gemini-search"
 mcp-gemini-search = "mcp_gemini_search.cli:main"
 
 [dependency-groups]
-dev = ["pytest", "anyio", "jsonschema", "pytest-benchmark", "ruff", "ty"]
+dev = ["pytest", "anyio", "pytest-benchmark", "ruff", "ty"]
 
 [tool.uv]
-prerelease = "if-necessary"
+prerelease = "if-necessary-or-explicit"
 
 [tool.ruff]
 preview = true

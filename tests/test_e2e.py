@@ -26,13 +26,13 @@ from typing import Any
 import anyio
 import orjson
 import pytest
-from mcp import types
 from mcp.client.session import ClientSession
 from mcp.client.stdio import (
     StdioServerParameters,
     get_default_environment,
     stdio_client,
 )
+from mcp_types import TextContent
 
 from mcp_gemini_search import __version__
 
@@ -102,9 +102,9 @@ async def test_stdio_handshake_reports_golden_server_info_and_tool() -> None:
                 init = await session.initialize()
                 tools = await session.list_tools()
 
-    assert init.serverInfo.name == golden["name"]
-    assert init.serverInfo.version == __version__
-    assert init.serverInfo.websiteUrl == golden["websiteUrl"]
+    assert init.server_info.name == golden["name"]
+    assert init.server_info.version == __version__
+    assert init.server_info.website_url == golden["websiteUrl"]
 
     assert [tool.name for tool in tools.tools] == [
         "google_search",
@@ -114,8 +114,8 @@ async def test_stdio_handshake_reports_golden_server_info_and_tool() -> None:
     for tool, golden_tool in zip(tools.tools, golden_tools, strict=True):
         assert tool.name == golden_tool["name"]
         assert tool.description == golden_tool["description"]
-        assert tool.inputSchema == golden_tool["inputSchema"]
-        assert tool.outputSchema == golden_tool["outputSchema"]
+        assert tool.input_schema == golden_tool["inputSchema"]
+        assert tool.output_schema == golden_tool["outputSchema"]
 
 
 async def test_logpath_records_startup_line_and_jsonrpc_frames(
@@ -218,11 +218,11 @@ async def test_live_google_search_returns_grounded_text() -> None:
                 await session.initialize()
                 result = await session.call_tool("google_search", {"query": "latest Go release version"})
 
-    assert not result.isError
+    assert not result.is_error
     block = result.content[0]
-    assert isinstance(block, types.TextContent)
+    assert isinstance(block, TextContent)
     assert block.text.strip()
-    if result.structuredContent and result.structuredContent.get("sources"):
+    if result.structured_content and result.structured_content.get("sources"):
         assert "\n## Sources\n" in block.text
 
 
@@ -249,18 +249,18 @@ async def test_live_deep_research_start_and_poll_then_cancel() -> None:
                     "deep_research",
                     {"query": "one-sentence summary of the Go programming language"},
                 )
-                assert not start.isError
-                assert start.structuredContent is not None
-                interaction_id = start.structuredContent["interaction_id"]
+                assert not start.is_error
+                assert start.structured_content is not None
+                interaction_id = start.structured_content["interaction_id"]
                 assert interaction_id
 
                 poll = await session.call_tool(
                     "deep_research_result",
                     {"interaction_id": interaction_id, "wait_seconds": 5},
                 )
-                assert not poll.isError
-                assert poll.structuredContent is not None
-                assert poll.structuredContent["status"] in {"in_progress", "completed"}
+                assert not poll.is_error
+                assert poll.structured_content is not None
+                assert poll.structured_content["status"] in {"in_progress", "completed"}
 
     # Cancel via the SDK so the billed background run does not linger.
     client = genai.Client(api_key=api_key)
@@ -292,9 +292,9 @@ async def test_live_deep_research_full_run_to_completion() -> None:
                     "deep_research",
                     {"query": "one-paragraph overview of the MCP protocol"},
                 )
-                assert not start.isError
-                assert start.structuredContent is not None
-                interaction_id = start.structuredContent["interaction_id"]
+                assert not start.is_error
+                assert start.structured_content is not None
+                interaction_id = start.structured_content["interaction_id"]
 
                 status = "in_progress"
                 report_text = ""
@@ -304,11 +304,11 @@ async def test_live_deep_research_full_run_to_completion() -> None:
                         "deep_research_result",
                         {"interaction_id": interaction_id, "wait_seconds": 60},
                     )
-                    assert not poll.isError
-                    assert poll.structuredContent is not None
-                    status = poll.structuredContent["status"]
-                    report_text = poll.structuredContent.get("text", "")
-                    sources = poll.structuredContent.get("sources")
+                    assert not poll.is_error
+                    assert poll.structured_content is not None
+                    status = poll.structured_content["status"]
+                    report_text = poll.structured_content.get("text", "")
+                    sources = poll.structured_content.get("sources")
 
                 assert status == "completed"
                 assert report_text.strip()

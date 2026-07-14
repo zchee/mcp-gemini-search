@@ -16,6 +16,7 @@ This repository ports the behavior of [`yukukotani/mcp-gemini-google-search`](ht
 ## Requirements
 
 - Python 3.13 or later
+- mcp[cli] 2.0.0b1 (pre-release MCP Python SDK v2)
 
 ## Installation
 

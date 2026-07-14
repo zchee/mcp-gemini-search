@@ -17,10 +17,20 @@
 from __future__ import annotations
 
 import enum
+import functools
 from typing import Any
 
-from mcp import types
-from mcp.server.lowlevel import Server
+import jsonschema
+from mcp.server import Server, ServerRequestContext
+from mcp_types import (
+    CallToolRequestParams,
+    CallToolResult,
+    ContentBlock,
+    ListToolsResult,
+    PaginatedRequestParams,
+    TextContent,
+    Tool,
+)
 
 from mcp_gemini_search import __version__
 from mcp_gemini_search.research import (
@@ -67,10 +77,12 @@ RESEARCH_RESULT_TOOL_DESCRIPTION = (
 
 # inputSchema and outputSchema for google_search are pinned byte-for-byte by the
 # golden tools/list response (tests/golden/tools_list.json); any change here
-# must update the golden in lockstep. The mcp SDK validates tool input against
-# inputSchema and structured output against outputSchema. Note the ``sources``
-# type is ["null", "array"] (a nullable slice inherited from the retired Go
-# server's schema generator), NOT "array".
+# must update the golden in lockstep. mcp v2 dropped the SDK-side validation of
+# tool arguments, so _call_tool enforces these input schemas itself with
+# jsonschema before dispatch; structured output is validated against
+# outputSchema on the client side. Note the ``sources`` type is ["null", "array"]
+# (a nullable slice inherited from the retired Go server's schema generator),
+# NOT "array".
 _INPUT_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
@@ -251,52 +263,76 @@ _RESEARCH_RESULT_OUTPUT_SCHEMA: dict[str, Any] = {
 }
 
 
-def create_server(
-    service: GoogleSearchService,
-    research: DeepResearchService,
-) -> Server:
-    """Create the low-level MCP server wired to search and research services.
+_TOOL_INPUT_SCHEMAS: dict[str, dict[str, Any]] = {
+    ToolName.GOOGLE_SEARCH: _INPUT_SCHEMA,
+    ToolName.DEEP_RESEARCH: _RESEARCH_INPUT_SCHEMA,
+    ToolName.DEEP_RESEARCH_RESULT: _RESEARCH_RESULT_INPUT_SCHEMA,
+}
 
-    The server identity (name, version, website URL) reproduces the Go server's
-    ``serverInfo`` exactly. The ``google_search`` tool returns its grounded text
-    as unstructured content and the structured output dict as
-    ``structuredContent``. The ``deep_research`` and ``deep_research_result``
-    tools are always advertised.
-    Failures propagate as exceptions, which the SDK converts into an ``isError``
-    result carrying the exception message.
-    """
-    server = Server(
-        name=SERVER_NAME,
-        version=__version__,
-        website_url=WEBSITE_URL,
-    )
 
-    # The low-level SDK awaits tool handlers, so this must stay async.
-    @server.list_tools()
-    async def list_tools() -> list[types.Tool]:  # noqa: RUF029
-        return [
-            types.Tool(
+async def _list_tools(  # noqa: RUF029
+    ctx: ServerRequestContext,
+    params: PaginatedRequestParams | None,
+) -> ListToolsResult:
+    """Return the three tool declarations with their pinned schemas."""
+    return ListToolsResult(
+        tools=[
+            Tool(
                 name=SEARCH_TOOL_NAME,
                 description=SEARCH_TOOL_DESCRIPTION,
-                inputSchema=_INPUT_SCHEMA,
-                outputSchema=_OUTPUT_SCHEMA,
+                input_schema=_INPUT_SCHEMA,
+                output_schema=_OUTPUT_SCHEMA,
             ),
-            types.Tool(
+            Tool(
                 name=RESEARCH_TOOL_NAME,
                 description=RESEARCH_TOOL_DESCRIPTION,
-                inputSchema=_RESEARCH_INPUT_SCHEMA,
-                outputSchema=_RESEARCH_OUTPUT_SCHEMA,
+                input_schema=_RESEARCH_INPUT_SCHEMA,
+                output_schema=_RESEARCH_OUTPUT_SCHEMA,
             ),
-            types.Tool(
+            Tool(
                 name=RESEARCH_RESULT_TOOL_NAME,
                 description=RESEARCH_RESULT_TOOL_DESCRIPTION,
-                inputSchema=_RESEARCH_RESULT_INPUT_SCHEMA,
-                outputSchema=_RESEARCH_RESULT_OUTPUT_SCHEMA,
+                input_schema=_RESEARCH_RESULT_INPUT_SCHEMA,
+                output_schema=_RESEARCH_RESULT_OUTPUT_SCHEMA,
             ),
         ]
+    )
 
-    @server.call_tool()
-    async def call_tool(name: str, arguments: dict[str, Any]) -> tuple[list[types.ContentBlock], dict[str, Any]]:
+
+async def _call_tool(
+    ctx: ServerRequestContext,
+    params: CallToolRequestParams,
+    *,
+    service: GoogleSearchService,
+    research: DeepResearchService,
+) -> CallToolResult:
+    """Validate the arguments with jsonschema, dispatch to a tool, and wrap errors.
+
+    Every failure path returns ``is_error=True`` with the error text so the
+    calling LLM can read and self-correct; mcp v2 would otherwise surface
+    raised exceptions as opaque JSON-RPC protocol errors.
+    """
+    name = params.name
+    arguments = params.arguments or {}
+
+    schema = _TOOL_INPUT_SCHEMAS.get(name)
+    if schema is None:
+        return CallToolResult(
+            content=[TextContent(type="text", text=f"Unknown tool: {name}")],
+            is_error=True,
+        )
+
+    try:
+        jsonschema.validate(instance=arguments, schema=schema)
+    except jsonschema.exceptions.ValidationError as e:
+        return CallToolResult(
+            content=[TextContent(type="text", text=f"Invalid arguments for {name}: {e.message}")],
+            is_error=True,
+        )
+
+    try:
+        content: list[ContentBlock]
+        structured: dict[str, Any]
         match name:
             case ToolName.GOOGLE_SEARCH:
                 output = await service.search(
@@ -304,8 +340,8 @@ def create_server(
                     url_context=arguments.get("url_context"),
                     code_execution=arguments.get("code_execution"),
                 )
-                content: list[types.ContentBlock] = [types.TextContent(type="text", text=output.text)]
-                return content, output.to_structured()
+                content = [TextContent(type="text", text=output.text)]
+                structured = output.to_structured()
 
             case ToolName.DEEP_RESEARCH:
                 start = await research.start(
@@ -319,7 +355,8 @@ def create_server(
                     f"status={start.status}; call deep_research_result with this "
                     f"interaction_id to check progress"
                 )
-                return [types.TextContent(type="text", text=start_text)], start.to_structured()
+                content = [TextContent(type="text", text=start_text)]
+                structured = start.to_structured()
 
             case ToolName.DEEP_RESEARCH_RESULT:
                 result = await research.result(
@@ -333,9 +370,45 @@ def create_server(
                         f"deep research {result.interaction_id} is {result.status}; "
                         f"call deep_research_result again with this interaction_id to check progress"
                     )
-                return [types.TextContent(type="text", text=result_text)], result.to_structured()
+                content = [TextContent(type="text", text=result_text)]
+                structured = result.to_structured()
 
             case _:
-                raise ValueError(f"Unknown tool: {name}")
+                # Unreachable while _TOOL_INPUT_SCHEMAS and this match list the
+                # same tools; a tool added to one but not the other fails loudly
+                # here instead of as a NameError on `content` below.
+                raise AssertionError(f"unhandled tool: {name}")
 
-    return server
+        return CallToolResult(
+            content=content,
+            structured_content=structured,
+            is_error=False,
+        )
+    except Exception as e:
+        return CallToolResult(
+            content=[TextContent(type="text", text=str(e))],
+            is_error=True,
+        )
+
+
+def create_server(
+    service: GoogleSearchService,
+    research: DeepResearchService,
+) -> Server:
+    """Create the low-level MCP server wired to search and research services.
+
+    The server identity (name, version, website URL) reproduces the Go server's
+    ``serverInfo`` exactly. The ``google_search`` tool returns its grounded text
+    as unstructured content and the structured output dict as
+    ``structuredContent``. The ``deep_research`` and ``deep_research_result``
+    tools are always advertised.
+    Tool failures are converted here into ``isError`` results carrying the
+    exception message so callers retain the server's established error behavior.
+    """
+    return Server(
+        name=SERVER_NAME,
+        version=__version__,
+        website_url=WEBSITE_URL,
+        on_list_tools=_list_tools,
+        on_call_tool=functools.partial(_call_tool, service=service, research=research),
+    )

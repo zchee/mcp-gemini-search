@@ -23,7 +23,7 @@ import signal
 import sys
 
 import anyio
-from mcp.server.lowlevel import Server
+from mcp.server import Server
 from mcp.server.stdio import stdio_server
 
 from mcp_gemini_search import _logging

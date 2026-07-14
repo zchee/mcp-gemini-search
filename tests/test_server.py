@@ -25,9 +25,18 @@ import anyio
 import orjson
 import pytest
 from google import genai
-from mcp import types
+from mcp.client import Client
 from mcp.client.session import ClientSession
 from mcp.shared.memory import create_client_server_memory_streams
+from mcp_types import (
+    ClientCapabilities,
+    Implementation,
+    InitializedNotification,
+    InitializeRequest,
+    InitializeRequestParams,
+    InitializeResult,
+    TextContent,
+)
 
 from mcp_gemini_search import __version__
 from mcp_gemini_search.config import DEFAULT_MODEL
@@ -139,11 +148,23 @@ _GROUNDED_OUTPUT = GoogleSearchOutput(
 
 
 @asynccontextmanager
-async def _session(
+async def _client(
     service: GoogleSearchService,
     research: DeepResearchService | None = None,
-) -> AsyncGenerator[tuple[ClientSession, types.InitializeResult]]:
-    """Yield a client session connected to the server, initialized at 2025-06-18."""
+) -> AsyncGenerator[Client]:
+    """Yield an in-memory v2 client session connected to the server."""
+    research_service = research if research is not None else _StubResearchService()
+    server = create_server(service, research_service)
+    async with Client(server) as client:
+        yield client
+
+
+@asynccontextmanager
+async def _raw_session(
+    service: GoogleSearchService,
+    research: DeepResearchService | None = None,
+) -> AsyncGenerator[tuple[ClientSession, InitializeResult]]:
+    """Yield a raw session initialized with the protocol version pinned by the golden."""
     research_service = research if research is not None else _StubResearchService()
     server = create_server(service, research_service)
     async with create_client_server_memory_streams() as (
@@ -158,24 +179,21 @@ async def _session(
                     server_read,
                     server_write,
                     server.create_initialization_options(),
-                    raise_exceptions=True,
                 )
             )
             try:
                 async with ClientSession(client_read, client_write) as session:
                     init = await session.send_request(
-                        types.ClientRequest(
-                            types.InitializeRequest(
-                                params=types.InitializeRequestParams(
-                                    protocolVersion=REQUESTED_PROTOCOL_VERSION,
-                                    capabilities=types.ClientCapabilities(),
-                                    clientInfo=types.Implementation(name="test-client", version="0.0.0"),
-                                )
+                        InitializeRequest(
+                            params=InitializeRequestParams(
+                                protocol_version=REQUESTED_PROTOCOL_VERSION,
+                                capabilities=ClientCapabilities(),
+                                client_info=Implementation(name="test-client", version="0.0.0"),
                             )
                         ),
-                        types.InitializeResult,
+                        InitializeResult,
                     )
-                    await session.send_notification(types.ClientNotification(types.InitializedNotification()))
+                    await session.send_notification(InitializedNotification())
                     yield session, init
             finally:
                 tg.cancel_scope.cancel()
@@ -184,14 +202,14 @@ async def _session(
 async def test_initialize_negotiates_golden_protocol_and_server_info() -> None:
     """initialize echoes the requested protocol version and the golden serverInfo."""
     golden = _load_golden("initialize.json")["result"]
-    async with _session(_StubService(_GROUNDED_OUTPUT)) as (_session_obj, init):
-        assert init.protocolVersion == REQUESTED_PROTOCOL_VERSION
-        assert init.protocolVersion == golden["protocolVersion"]
+    async with _raw_session(_StubService(_GROUNDED_OUTPUT)) as (_session_obj, init):
+        assert init.protocol_version == REQUESTED_PROTOCOL_VERSION
+        assert init.protocol_version == golden["protocolVersion"]
 
         golden_info = golden["serverInfo"]
-        assert init.serverInfo.name == golden_info["name"]
-        assert init.serverInfo.version == __version__
-        assert init.serverInfo.websiteUrl == golden_info["websiteUrl"]
+        assert init.server_info.name == golden_info["name"]
+        assert init.server_info.version == __version__
+        assert init.server_info.website_url == golden_info["websiteUrl"]
 
         # Capabilities are SDK-owned and diverge from the Go golden; only assert
         # that the tools capability is advertised.
@@ -200,27 +218,27 @@ async def test_initialize_negotiates_golden_protocol_and_server_info() -> None:
 
 async def test_call_tool_returns_grounded_text_and_structured_content() -> None:
     """tools/call returns grounded text content plus structuredContent."""
-    async with _session(_StubService(_GROUNDED_OUTPUT)) as (session, _init):
-        result = await session.call_tool("google_search", {"query": "any"})
+    async with _client(_StubService(_GROUNDED_OUTPUT)) as client:
+        result = await client.call_tool("google_search", {"query": "any"})
 
-    assert not result.isError
+    assert not result.is_error
     assert len(result.content) == 1
     block = result.content[0]
-    assert isinstance(block, types.TextContent)
+    assert isinstance(block, TextContent)
     assert block.text == _GROUNDED_OUTPUT.text
-    assert result.structuredContent == _GROUNDED_OUTPUT.to_structured()
+    assert result.structured_content == _GROUNDED_OUTPUT.to_structured()
 
 
 async def test_call_google_search_passes_tool_overrides() -> None:
     """google_search passes explicit per-request tool overrides to the service."""
     service = _StubService(_GROUNDED_OUTPUT)
-    async with _session(service) as (session, _init):
-        result = await session.call_tool(
+    async with _client(service) as client:
+        result = await client.call_tool(
             "google_search",
             {"query": "any", "url_context": True, "code_execution": False},
         )
 
-    assert not result.isError
+    assert not result.is_error
     assert service.search_calls == [
         {
             "query": "any",
@@ -233,10 +251,10 @@ async def test_call_google_search_passes_tool_overrides() -> None:
 async def test_call_google_search_defaults_tool_overrides_to_none() -> None:
     """google_search passes None tool overrides when both arguments are omitted."""
     service = _StubService(_GROUNDED_OUTPUT)
-    async with _session(service) as (session, _init):
-        result = await session.call_tool("google_search", {"query": "any"})
+    async with _client(service) as client:
+        result = await client.call_tool("google_search", {"query": "any"})
 
-    assert not result.isError
+    assert not result.is_error
     assert service.search_calls == [
         {
             "query": "any",
@@ -250,32 +268,76 @@ async def test_call_tool_empty_query_returns_is_error() -> None:
     """A blank query yields isError with the exact message."""
     client = genai.Client(api_key="dummy")
     service = GoogleSearchService(model=DEFAULT_MODEL, interactions=client.aio.interactions)
-    async with _session(service) as (session, _init):
-        result = await session.call_tool("google_search", {"query": "  "})
+    async with _client(service) as mcp_client:
+        result = await mcp_client.call_tool("google_search", {"query": "  "})
 
-    assert result.isError
+    assert result.is_error
     assert len(result.content) >= 1
     block = result.content[0]
-    assert isinstance(block, types.TextContent)
+    assert isinstance(block, TextContent)
     assert block.text == "search query cannot be empty"
 
 
 async def test_call_tool_unknown_name_returns_is_error() -> None:
     """A name other than the three advertised tools is rejected."""
-    async with _session(_StubService(_GROUNDED_OUTPUT)) as (session, _init):
-        result = await session.call_tool("nonexistent_tool", {"query": "x"})
+    async with _client(_StubService(_GROUNDED_OUTPUT)) as client:
+        result = await client.call_tool("nonexistent_tool", {"query": "x"})
 
-    assert result.isError
+    assert result.is_error
     block = result.content[0]
-    assert isinstance(block, types.TextContent)
+    assert isinstance(block, TextContent)
     assert block.text == "Unknown tool: nonexistent_tool"
+
+
+@pytest.mark.parametrize(
+    ("tool_name", "arguments", "violation"),
+    [
+        ("google_search", {}, "is a required property"),
+        ("google_search", {"query": 42}, "is not of type"),
+        ("google_search", {"query": "topic", "unexpected": True}, "Additional properties"),
+        ("deep_research", {}, "is a required property"),
+        ("deep_research", {"query": 42}, "is not of type"),
+        ("deep_research", {"query": "topic", "unexpected": True}, "Additional properties"),
+        ("deep_research_result", {}, "is a required property"),
+        ("deep_research_result", {"interaction_id": 42}, "is not of type"),
+        (
+            "deep_research_result",
+            {"interaction_id": "dr-1", "unexpected": True},
+            "Additional properties",
+        ),
+    ],
+    ids=[
+        "google-search-missing",
+        "google-search-wrong-type",
+        "google-search-extra",
+        "deep-research-missing",
+        "deep-research-wrong-type",
+        "deep-research-extra",
+        "deep-research-result-missing",
+        "deep-research-result-wrong-type",
+        "deep-research-result-extra",
+    ],
+)
+async def test_call_tool_rejects_invalid_arguments(
+    tool_name: str,
+    arguments: dict[str, Any],
+    violation: str,
+) -> None:
+    """Every tool rejects schema-invalid arguments as a normal error result."""
+    async with _client(_StubService(_GROUNDED_OUTPUT)) as client:
+        result = await client.call_tool(tool_name, arguments)
+
+    assert result.is_error is True
+    block = result.content[0]
+    assert isinstance(block, TextContent)
+    assert violation in block.text
 
 
 async def test_tools_list_returns_three_tools() -> None:
     """list_tools returns all three standard tools in golden order."""
     golden_tools = _load_golden("tools_list.json")["result"]["tools"]
-    async with _session(_StubService(_GROUNDED_OUTPUT)) as (session, _init):
-        result = await session.list_tools()
+    async with _client(_StubService(_GROUNDED_OUTPUT)) as client:
+        result = await client.list_tools()
 
     assert len(result.tools) == 3
     assert [tool.name for tool in result.tools] == [
@@ -286,35 +348,35 @@ async def test_tools_list_returns_three_tools() -> None:
     for tool, golden in zip(result.tools, golden_tools, strict=True):
         assert tool.name == golden["name"]
         assert tool.description == golden["description"]
-        assert tool.inputSchema == golden["inputSchema"]
-        assert tool.outputSchema == golden["outputSchema"]
+        assert tool.input_schema == golden["inputSchema"]
+        assert tool.output_schema == golden["outputSchema"]
 
 
 async def test_call_deep_research_returns_start_text_and_structured() -> None:
     """deep_research returns the start message and structured interaction id."""
     start = DeepResearchStart(interaction_id="dr-99", status="in_progress")
     research = _StubResearchService(start=start)
-    async with _session(_StubService(_GROUNDED_OUTPUT), research=research) as (session, _init):
-        result = await session.call_tool("deep_research", {"query": "topic"})
+    async with _client(_StubService(_GROUNDED_OUTPUT), research=research) as client:
+        result = await client.call_tool("deep_research", {"query": "topic"})
 
-    assert not result.isError
+    assert not result.is_error
     block = result.content[0]
-    assert isinstance(block, types.TextContent)
+    assert isinstance(block, TextContent)
     assert "dr-99" in block.text
     assert "in_progress" in block.text
-    assert result.structuredContent == start.to_structured()
+    assert result.structured_content == start.to_structured()
 
 
 async def test_call_deep_research_passes_agent_override() -> None:
     """deep_research passes an explicit per-request agent through to the service."""
     research = _StubResearchService()
-    async with _session(_StubService(_GROUNDED_OUTPUT), research=research) as (session, _init):
-        result = await session.call_tool(
+    async with _client(_StubService(_GROUNDED_OUTPUT), research=research) as client:
+        result = await client.call_tool(
             "deep_research",
             {"query": "topic", "agent": DEEP_RESEARCH_MAX_AGENT},
         )
 
-    assert not result.isError
+    assert not result.is_error
     assert research.start_calls == [
         {
             "query": "topic",
@@ -328,10 +390,10 @@ async def test_call_deep_research_passes_agent_override() -> None:
 async def test_call_deep_research_defaults_agent_override_to_empty() -> None:
     """deep_research passes an empty agent override when the argument is omitted."""
     research = _StubResearchService()
-    async with _session(_StubService(_GROUNDED_OUTPUT), research=research) as (session, _init):
-        result = await session.call_tool("deep_research", {"query": "topic"})
+    async with _client(_StubService(_GROUNDED_OUTPUT), research=research) as client:
+        result = await client.call_tool("deep_research", {"query": "topic"})
 
-    assert not result.isError
+    assert not result.is_error
     assert research.start_calls == [
         {
             "query": "topic",
@@ -351,38 +413,38 @@ async def test_call_deep_research_result_returns_report() -> None:
         sources=(GoogleSearchSource(index=1, title="Src", uri="https://s.example"),),
     )
     research = _StubResearchService(result=report)
-    async with _session(_StubService(_GROUNDED_OUTPUT), research=research) as (session, _init):
-        result = await session.call_tool(
+    async with _client(_StubService(_GROUNDED_OUTPUT), research=research) as client:
+        result = await client.call_tool(
             "deep_research_result",
             {"interaction_id": "dr-99", "wait_seconds": 0},
         )
 
-    assert not result.isError
+    assert not result.is_error
     block = result.content[0]
-    assert isinstance(block, types.TextContent)
+    assert isinstance(block, TextContent)
     assert block.text == report.text
-    assert result.structuredContent == report.to_structured()
+    assert result.structured_content == report.to_structured()
 
 
 async def test_call_deep_research_error_returns_is_error() -> None:
     """Research service ValueError surfaces through call_tool as isError."""
     research = _StubResearchService(error=ValueError("research query cannot be empty"))
-    async with _session(_StubService(_GROUNDED_OUTPUT), research=research) as (session, _init):
-        result = await session.call_tool("deep_research", {"query": "  "})
+    async with _client(_StubService(_GROUNDED_OUTPUT), research=research) as client:
+        result = await client.call_tool("deep_research", {"query": "  "})
 
-    assert result.isError
+    assert result.is_error
     block = result.content[0]
-    assert isinstance(block, types.TextContent)
+    assert isinstance(block, TextContent)
     assert block.text == "research query cannot be empty"
 
 
 async def test_call_deep_research_runtime_error_returns_is_error() -> None:
     """Research service RuntimeError surfaces through call_tool as isError."""
     research = _StubResearchService(error=RuntimeError("deep research failed: boom"))
-    async with _session(_StubService(_GROUNDED_OUTPUT), research=research) as (session, _init):
-        result = await session.call_tool("deep_research_result", {"interaction_id": "dr-1"})
+    async with _client(_StubService(_GROUNDED_OUTPUT), research=research) as client:
+        result = await client.call_tool("deep_research_result", {"interaction_id": "dr-1"})
 
-    assert result.isError
+    assert result.is_error
     block = result.content[0]
-    assert isinstance(block, types.TextContent)
+    assert isinstance(block, TextContent)
     assert block.text == "deep research failed: boom"
