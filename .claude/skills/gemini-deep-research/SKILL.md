@@ -43,8 +43,10 @@ Input (`additionalProperties: false`):
 | `agent` | string enum | `deep-research-preview-04-2026` (faster) or `deep-research-max-preview-04-2026` (deeper, slower). Omit to use the server default (`GEMINI_DEEP_RESEARCH_AGENT`). |
 
 Output: `{"interaction_id": "...", "status": "in_progress"}`. The
-`interaction_id` is durable — persist it (todo list, scratch file, message to
-the user) before doing anything else, because losing it orphans a billed run.
+`interaction_id` is durable — persist it AND tell the user immediately,
+before doing anything else. A crashed or interrupted polling loop kills your
+process state, and the id is the only handle that survives; losing it
+orphans a billed run.
 
 ## Write a rich brief
 
@@ -59,7 +61,10 @@ query. Include:
   annotated bibliography", "an executive summary followed by deep-dives".
 
 Richer briefs produce measurably better reports; a one-line query wastes the
-run on the agent guessing your intent.
+run on the agent guessing your intent. When the user's request is terse, do
+not pass it through verbatim — expand it into a brief yourself, stating the
+scope and output shape you inferred (and confirm them with the user first
+when the run is expensive enough to matter).
 
 ## Plan-review workflow (optional but recommended for expensive questions)
 

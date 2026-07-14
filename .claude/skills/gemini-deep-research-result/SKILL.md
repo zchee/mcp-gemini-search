@@ -54,7 +54,9 @@ on some entries; `sources` may be absent when nothing was cited).
 Reports are long. When relaying to the user, keep the citation markers and
 the Sources section intact — the verifiability is the point of Deep
 Research. Summarize on top of the report if asked, but always offer or
-provide the full text.
+provide the full text. Include the `interaction_id` alongside the delivered
+report: interactions persist ~55 days, and the id is what lets the user (or
+a future session) re-fetch the full text without paying for a new run.
 
 For a `plan_only` run, `text` contains the proposed research plan instead of
 a report — show it to the user and approve/refine it via a `deep_research`
