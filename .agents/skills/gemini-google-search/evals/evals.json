@@ -1,0 +1,39 @@
+{
+  "skill_name": "gemini-google-search",
+  "evals": [
+    {
+      "id": 0,
+      "prompt": "What's the latest stable Go release right now, and when was it released? I want sources I can verify.",
+      "expected_output": "answer states a concrete Go version number (e.g. 1.26.x); answer includes at least one clickable https:// source link; tool_calls.json records at least one google_search call with a non-empty self-contained query",
+      "files": [],
+      "assertions": [
+        "answer states a concrete Go version number (e.g. 1.26.x)",
+        "answer includes at least one clickable https:// source link",
+        "tool_calls.json records at least one google_search call with a non-empty self-contained query"
+      ]
+    },
+    {
+      "id": 1,
+      "prompt": "Read https://go.dev/doc/devel/release and tell me which Go release the newest entry covers, and summarize its headline changes.",
+      "expected_output": "at least one google_search call sets url_context=true (the query embeds a URL to open); some call's query contains the go.dev/doc/devel/release URL; answer names a specific Go release (Go 1.x); answer includes at least one https:// source link",
+      "files": [],
+      "assertions": [
+        "at least one google_search call sets url_context=true (the query embeds a URL to open)",
+        "some call's query contains the go.dev/doc/devel/release URL",
+        "answer names a specific Go release (Go 1.x)",
+        "answer includes at least one https:// source link"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Find the current estimated populations of the Tokyo metro area and the Osaka (Keihanshin) metro area, and compute the Tokyo/Osaka ratio to two decimal places. Cite sources.",
+      "expected_output": "at least one google_search call sets code_execution=true OR the answer shows an explicitly computed ratio with two decimals; answer contains a numeric ratio with two decimal places; answer includes at least one https:// source link",
+      "files": [],
+      "assertions": [
+        "at least one google_search call sets code_execution=true OR the answer shows an explicitly computed ratio with two decimals",
+        "answer contains a numeric ratio with two decimal places",
+        "answer includes at least one https:// source link"
+      ]
+    }
+  ]
+}
