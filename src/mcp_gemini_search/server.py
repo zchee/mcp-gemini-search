@@ -54,25 +54,38 @@ class ToolName(enum.StrEnum):
 
 SEARCH_TOOL_NAME = ToolName.GOOGLE_SEARCH
 SEARCH_TOOL_DESCRIPTION = (
-    "Performs a web search using Google Search (via the Gemini API) and returns "
-    "the results. This tool is useful for finding information on the internet "
-    "based on a query."
+    "Search the web with Google Search grounding through Gemini. Returns a "
+    "Markdown answer whose claims carry inline [n] citation markers that map to "
+    "a numbered '## Sources' list of links. Use it for current events, fresh "
+    "facts, or any claim that needs verifiable web sources; each call is one "
+    "independent search, so refine the query and call again if the answer "
+    "misses. Set url_context=true when the query contains URLs the model should "
+    "open and read; set code_execution=true when the answer needs real "
+    "computation (math, data processing) rather than retrieval alone."
 )
 RESEARCH_TOOL_NAME = ToolName.DEEP_RESEARCH
 RESEARCH_TOOL_DESCRIPTION = (
-    "Starts a Gemini Deep Research agent run in the background and returns an "
-    "interaction_id immediately; research typically takes several minutes and is "
-    "a billed multi-step agent run. Never call this tool twice for the same "
-    "question — poll deep_research_result with the returned interaction_id "
-    "instead. Optional plan_only requests a research plan for review before "
-    "execution; previous_interaction_id continues or refines a prior run."
+    "Start an asynchronous Gemini Deep Research run: an autonomous agent that "
+    "searches the web, reads sources, and writes a long, citation-rich Markdown "
+    "report. Returns interaction_id and status immediately and never waits for "
+    "the report — the run continues in the background for several minutes and "
+    "is billed per run. Workflow: call this exactly once per research question, "
+    "keep the interaction_id, and poll deep_research_result until a terminal "
+    "status. Never re-issue the same question to retry or check progress — that "
+    "starts a second billed run; call this tool again only for a deliberate "
+    "follow-up or plan approval via previous_interaction_id. For quick factual "
+    "lookups use google_search instead. Set plan_only=true to receive a "
+    "research plan for review first."
 )
 RESEARCH_RESULT_TOOL_NAME = ToolName.DEEP_RESEARCH_RESULT
 RESEARCH_RESULT_TOOL_DESCRIPTION = (
-    "Fetches the status (and, once completed, the formatted report) of a "
-    "deep_research run by its interaction_id. Call repeatedly until status is "
-    "completed, failed, or cancelled. Optionally long-poll with wait_seconds "
-    "(0–60) before returning a non-terminal status."
+    "Fetch the current state of a deep_research run by interaction_id. While "
+    "status is 'in_progress' the report is not ready — wait, then call this "
+    "tool again, passing wait_seconds=60 so the server long-polls and saves "
+    "round-trips. When status is 'completed' the result carries the full "
+    "Markdown report (text) with [n] citation markers plus its sources list; "
+    "'failed' and 'cancelled' are terminal. Always poll with this tool — never "
+    "start a new deep_research run to check on an existing one."
 )
 
 # inputSchema and outputSchema for google_search are pinned byte-for-byte by the
@@ -88,20 +101,25 @@ _INPUT_SCHEMA: dict[str, Any] = {
     "properties": {
         "query": {
             "type": "string",
-            "description": "The search query to find information on the web.",
+            "description": (
+                "The web search query. Natural-language questions work well; "
+                "specific names, versions, and dates sharpen the results."
+            ),
         },
         "url_context": {
             "type": "boolean",
             "description": (
-                "Override the server default (GEMINI_ENABLE_URL_CONTEXT) for this "
-                "request only: let the model fetch URLs mentioned in the query."
+                "Set true to let the model open and read URLs written in the "
+                "query; false to disable that. Omit to use the server default "
+                "(GEMINI_ENABLE_URL_CONTEXT)."
             ),
         },
         "code_execution": {
             "type": "boolean",
             "description": (
-                "Override the server default (GEMINI_ENABLE_CODE_EXECUTION) for this "
-                "request only: let the model run Python for computational answers."
+                "Set true to let the model write and run Python when the answer "
+                "needs real computation; false to disable that. Omit to use the "
+                "server default (GEMINI_ENABLE_CODE_EXECUTION)."
             ),
         },
     },
@@ -119,8 +137,9 @@ _OUTPUT_SCHEMA: dict[str, Any] = {
         "text": {
             "type": "string",
             "description": (
-                "The grounded response text formatted as Markdown, with inline citation "
-                "markers and an appended Sources section when available."
+                "The grounded answer as Markdown: inline [n] citation markers "
+                "refer to the numbered entries of the trailing '## Sources' "
+                "section when sources were cited."
             ),
         },
         "sources": {
@@ -144,7 +163,7 @@ _OUTPUT_SCHEMA: dict[str, Any] = {
                 "required": ["index"],
                 "additionalProperties": False,
             },
-            "description": "The sources referenced by the grounded response.",
+            "description": ("The cited sources; each index matches the [n] markers in text."),
         },
     },
     "required": ["query", "text"],
@@ -156,25 +175,37 @@ _RESEARCH_INPUT_SCHEMA: dict[str, Any] = {
     "properties": {
         "query": {
             "type": "string",
-            "description": "The research question or topic to investigate.",
+            "description": (
+                "The research question or task. Include scope, constraints, and "
+                "the desired depth or output shape — richer briefs produce "
+                "better reports."
+            ),
         },
         "plan_only": {
             "type": "boolean",
             "default": False,
-            "description": ("Request a research plan for review instead of executing the research immediately."),
+            "description": (
+                "Set true to get a research plan for review instead of running "
+                "the research. Approve or refine the plan with a follow-up "
+                "deep_research call that sets previous_interaction_id."
+            ),
         },
         "previous_interaction_id": {
             "type": "string",
-            "description": "Continue, refine, or approve a prior deep_research interaction by its id.",
+            "description": (
+                "The interaction_id of an earlier deep_research run: use it to "
+                "approve or refine a proposed plan, or to ask a follow-up that "
+                "builds on that run's findings."
+            ),
         },
         "agent": {
             "type": "string",
             "enum": [DEEP_RESEARCH_AGENT, DEEP_RESEARCH_MAX_AGENT],
             "description": (
-                "Override the server-configured agent for this call only: "
-                "'deep-research-preview-04-2026' is faster, "
-                "'deep-research-max-preview-04-2026' is more comprehensive. "
-                "Falls back to the server-configured agent when omitted."
+                "Deep Research variant for this call: "
+                "'deep-research-preview-04-2026' returns faster; "
+                "'deep-research-max-preview-04-2026' digs deeper and takes "
+                "longer. Omit to use the server-configured default."
             ),
         },
     },
@@ -187,11 +218,11 @@ _RESEARCH_OUTPUT_SCHEMA: dict[str, Any] = {
     "properties": {
         "interaction_id": {
             "type": "string",
-            "description": "The interaction id of the started deep research run.",
+            "description": ("The durable id of the started run. Save it — deep_research_result needs it."),
         },
         "status": {
             "type": "string",
-            "description": "The initial status of the background research run (typically in_progress).",
+            "description": "The initial run status, normally 'in_progress'.",
         },
     },
     "required": ["interaction_id", "status"],
@@ -211,7 +242,9 @@ _RESEARCH_RESULT_INPUT_SCHEMA: dict[str, Any] = {
             "maximum": 60,
             "default": 0,
             "description": (
-                "Optionally long-poll up to this many seconds for the run to reach a terminal status before returning."
+                "Seconds (0-60) the server may hold this request waiting for "
+                "the run to finish before answering. 0 returns the current "
+                "status immediately; 60 minimizes polling round-trips."
             ),
         },
     },
@@ -224,15 +257,21 @@ _RESEARCH_RESULT_OUTPUT_SCHEMA: dict[str, Any] = {
     "properties": {
         "interaction_id": {
             "type": "string",
-            "description": "The interaction id of the deep research run.",
+            "description": "The id of the polled run (echoes the request).",
         },
         "status": {
             "type": "string",
-            "description": "The current status of the research run.",
+            "description": (
+                "'in_progress' means poll again; 'completed' means the report "
+                "is in text; 'failed' and 'cancelled' are terminal."
+            ),
         },
         "text": {
             "type": "string",
-            "description": ("The formatted research report as Markdown, present only when status is completed."),
+            "description": (
+                "The finished research report as Markdown with inline [n] "
+                "citation markers; present only when status is 'completed'."
+            ),
         },
         "sources": {
             "type": ["null", "array"],
@@ -255,7 +294,7 @@ _RESEARCH_RESULT_OUTPUT_SCHEMA: dict[str, Any] = {
                 "required": ["index"],
                 "additionalProperties": False,
             },
-            "description": "The sources referenced by the grounded response.",
+            "description": ("The report's cited sources; each index matches the [n] markers in text."),
         },
     },
     "required": ["interaction_id", "status"],
