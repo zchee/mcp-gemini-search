@@ -78,6 +78,7 @@ class InteractionCreator(Protocol):
         input: str,
         tools: Sequence[Mapping[str, str]],
         store: bool,
+        service_tier: str = ...,
     ) -> Any:
         """Create an interaction for the given model, input, and tools.
 
@@ -108,12 +109,14 @@ class GoogleSearchService:
         *,
         url_context: bool = False,
         code_execution: bool = False,
+        service_tier: str = "",
     ) -> None:
-        """Store the model name, the injected interactions API, and the tool set."""
+        """Store the model name, the injected interactions API, the tool set, and the service tier."""
         self._model = model
         self._interactions = interactions
         self._url_context = url_context
         self._code_execution = code_execution
+        self._service_tier = service_tier
         self._tools = _build_tools(url_context, code_execution)
 
     @property
@@ -164,12 +167,16 @@ class GoogleSearchService:
             self._code_execution if code_execution is None else code_execution,
         )
 
+        extra: dict[str, Any] = {}
+        if self._service_tier:
+            extra["service_tier"] = self._service_tier
         try:
             interaction = await self._interactions.create(
                 model=self._model,
                 input=query,
                 tools=tools,
                 store=False,
+                **extra,
             )
         except Exception as e:
             raise RuntimeError(f"google search failed: {e}") from e

@@ -36,6 +36,8 @@ from mcp_gemini_search.search import (
 class StubInteractions:
     """Records the request and returns a canned interaction or raises an error."""
 
+    _SERVICE_TIER_OMITTED = object()
+
     def __init__(
         self,
         *,
@@ -48,6 +50,7 @@ class StubInteractions:
         self.got_input: str | None = None
         self.got_tools: Sequence[Mapping[str, str]] | None = None
         self.got_store: bool | None = None
+        self.got_service_tier: object = self._SERVICE_TIER_OMITTED
 
     async def create(
         self,
@@ -56,12 +59,14 @@ class StubInteractions:
         input: str,
         tools: Sequence[Mapping[str, str]],
         store: bool,
+        service_tier: str | object = _SERVICE_TIER_OMITTED,
     ) -> interactions.Interaction:
         """Record the request and return the canned interaction or raise the error."""
         self.got_model = model
         self.got_input = input
         self.got_tools = tools
         self.got_store = store
+        self.got_service_tier = service_tier
         if self.error is not None:
             raise self.error
         if self.interaction is None:
@@ -102,6 +107,39 @@ async def test_search_happy_path() -> None:
     assert stub.got_input == "golang"
     assert stub.got_tools == [{"type": "google_search"}]
     assert stub.got_store is False
+
+
+@pytest.mark.anyio
+async def test_search_passes_service_tier() -> None:
+    """When configured, search() forwards service_tier to create."""
+    stub = StubInteractions(interaction=_interaction(_output(_text("ok"))))
+    svc = GoogleSearchService("gemini-3.5-flash", stub, service_tier="flex")
+
+    await svc.search("golang")
+
+    assert stub.got_service_tier == "flex"
+
+
+@pytest.mark.anyio
+async def test_search_omits_service_tier_when_unset() -> None:
+    """When service_tier is empty, create is called without the service_tier kwarg."""
+    stub = StubInteractions(interaction=_interaction(_output(_text("ok"))))
+    svc = GoogleSearchService("gemini-3.5-flash", stub)
+
+    await svc.search("golang")
+
+    assert stub.got_service_tier is StubInteractions._SERVICE_TIER_OMITTED
+
+
+@pytest.mark.anyio
+async def test_search_omits_service_tier_when_empty() -> None:
+    """An explicit empty service_tier is omitted from the create call."""
+    stub = StubInteractions(interaction=_interaction(_output(_text("ok"))))
+    svc = GoogleSearchService("gemini-3.5-flash", stub, service_tier="")
+
+    await svc.search("golang")
+
+    assert stub.got_service_tier is StubInteractions._SERVICE_TIER_OMITTED
 
 
 @pytest.mark.parametrize(

@@ -106,6 +106,7 @@ If no model is configured, the server defaults to `gemini-3.1-pro-preview`.
 | `GEMINI_ENABLE_URL_CONTEXT`    | disabled                        | Server default for URL context on `google_search`.            |
 | `GEMINI_ENABLE_CODE_EXECUTION` | disabled                        | Server default for code execution on `google_search`.         |
 | `GEMINI_DEEP_RESEARCH_AGENT`   | `deep-research-preview-04-2026` | Server default for `deep_research`.                           |
+| `GEMINI_SERVICE_TIER`          | none                            | Service tier (`flex`, `standard`, `priority`) for both tools. |
 
 ### Optional built-in tools
 
@@ -117,6 +118,12 @@ export GEMINI_ENABLE_CODE_EXECUTION="1" # let the model run Python for computati
 ```
 
 Both flags accept the same truthy spellings as `GOOGLE_GENAI_USE_VERTEXAI` (`1`, `true`, `yes`, `on`; case-insensitive). Enabled tools can increase token usage, and on Gemini 3 models Google Search grounding is billed per executed search query.
+
+Optionally pin the Interactions API service tier for both `google_search` and `deep_research`:
+
+```bash
+export GEMINI_SERVICE_TIER="flex"  # or standard, priority
+```
 
 ## Running
 

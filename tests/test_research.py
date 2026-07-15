@@ -125,6 +125,34 @@ async def test_start_issues_background_create() -> None:
 
 
 @pytest.mark.anyio
+async def test_start_passes_service_tier() -> None:
+    """When configured, start() includes service_tier in the create kwargs."""
+    stub = StubInteractions(
+        create_response=_interaction(status="in_progress", interaction_id="dr-tier"),
+    )
+    svc = DeepResearchService("deep-research-preview-04-2026", stub, service_tier="priority")
+
+    await svc.start("q")
+
+    assert stub.create_kwargs is not None
+    assert stub.create_kwargs["service_tier"] == "priority"
+
+
+@pytest.mark.anyio
+async def test_start_omits_service_tier_when_unset() -> None:
+    """When service_tier is unset, create kwargs do not include service_tier."""
+    stub = StubInteractions(
+        create_response=_interaction(status="in_progress", interaction_id="dr-no-tier"),
+    )
+    svc = DeepResearchService("deep-research-preview-04-2026", stub)
+
+    await svc.start("q")
+
+    assert stub.create_kwargs is not None
+    assert "service_tier" not in stub.create_kwargs
+
+
+@pytest.mark.anyio
 async def test_start_plan_only_and_previous_interaction() -> None:
     """plan_only and previous_interaction_id add the expected create kwargs."""
     stub = StubInteractions(

@@ -26,6 +26,7 @@ from mcp_gemini_search.config import (
     ENV_GEMINI_ENABLE_CODE_EXECUTION,
     ENV_GEMINI_ENABLE_URL_CONTEXT,
     ENV_GEMINI_MODEL,
+    ENV_GEMINI_SERVICE_TIER,
     ENV_GOOGLE_API_KEY,
     ENV_GOOGLE_CLOUD_LOCATION,
     ENV_GOOGLE_CLOUD_PROJECT,
@@ -136,6 +137,48 @@ from mcp_gemini_search.config import (
                 deep_research_agent="deep-research-max-preview-04-2026",
             ),
         ),
+        (
+            {
+                ENV_GOOGLE_API_KEY: "test-key",
+                ENV_GEMINI_SERVICE_TIER: "flex",
+            },
+            ServerConfig(model=DEFAULT_MODEL, api_key="test-key", service_tier="flex"),
+        ),
+        (
+            {
+                ENV_GOOGLE_API_KEY: "test-key",
+                ENV_GEMINI_SERVICE_TIER: "standard",
+            },
+            ServerConfig(model=DEFAULT_MODEL, api_key="test-key", service_tier="standard"),
+        ),
+        (
+            {
+                ENV_GOOGLE_API_KEY: "test-key",
+                ENV_GEMINI_SERVICE_TIER: "priority",
+            },
+            ServerConfig(model=DEFAULT_MODEL, api_key="test-key", service_tier="priority"),
+        ),
+        (
+            {
+                ENV_GOOGLE_API_KEY: "test-key",
+                ENV_GEMINI_SERVICE_TIER: " Flex ",
+            },
+            ServerConfig(model=DEFAULT_MODEL, api_key="test-key", service_tier="flex"),
+        ),
+        (
+            {
+                ENV_GOOGLE_CLOUD_PROJECT: "project-1",
+                ENV_GOOGLE_GENAI_USE_VERTEXAI: "true",
+                ENV_GEMINI_SERVICE_TIER: "priority",
+            },
+            ServerConfig(
+                model=DEFAULT_MODEL,
+                vertexai=True,
+                project="project-1",
+                location=DEFAULT_LOCATION,
+                service_tier="priority",
+            ),
+        ),
     ],
     ids=[
         "google api key",
@@ -147,6 +190,11 @@ from mcp_gemini_search.config import (
         "optional tools falsy values stay disabled",
         "ai studio deep research max agent",
         "vertex deep research max agent",
+        "service tier flex",
+        "service tier standard",
+        "service tier priority",
+        "service tier whitespace and case normalized",
+        "vertex service tier priority",
     ],
 )
 def test_load_config_from_env(env: dict[str, str], want: ServerConfig) -> None:
@@ -169,8 +217,12 @@ def test_load_config_from_env(env: dict[str, str], want: ServerConfig) -> None:
             {ENV_GOOGLE_GENAI_USE_VERTEXAI: "true"},
             '"GOOGLE_CLOUD_PROJECT" environment variable is required when using Google Vertex AI',
         ),
+        (
+            {ENV_GOOGLE_API_KEY: "test-key", ENV_GEMINI_SERVICE_TIER: "turbo"},
+            '"GEMINI_SERVICE_TIER" must be one of "flex", "standard", "priority" (or unset); got \'turbo\'',
+        ),
     ],
-    ids=["missing api key", "missing vertex project"],
+    ids=["missing api key", "missing vertex project", "invalid service tier"],
 )
 def test_load_config_from_env_errors(env: dict[str, str], want_err: str) -> None:
     """Missing required variables raise ValueError with the Go-identical message."""

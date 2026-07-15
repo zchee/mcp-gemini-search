@@ -93,18 +93,21 @@ def _run(logpath: str) -> None:
             interactions=client.aio.interactions,
             url_context=config.url_context,
             code_execution=config.code_execution,
+            service_tier=config.service_tier,
         )
         research = DeepResearchService(
             agent=config.deep_research_agent,
             interactions=client.aio.interactions,
+            service_tier=config.service_tier,
         )
         server = create_server(service, research)
 
         tools_msg = ", ".join(tool["type"] for tool in service.tools)
         _logging.logger.info(
-            "gemini interactions tools: %s; deep research agent: %s",
+            "gemini interactions tools: %s; deep research agent: %s; service tier: %s",
             tools_msg,
             config.deep_research_agent,
+            config.service_tier or "default",
         )
         _logging.logger.info(_STARTUP_MESSAGE)
         try:

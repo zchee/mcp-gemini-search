@@ -32,9 +32,12 @@ ENV_GOOGLE_GENAI_USE_VERTEXAI = "GOOGLE_GENAI_USE_VERTEXAI"
 ENV_GEMINI_ENABLE_URL_CONTEXT = "GEMINI_ENABLE_URL_CONTEXT"
 ENV_GEMINI_ENABLE_CODE_EXECUTION = "GEMINI_ENABLE_CODE_EXECUTION"
 ENV_GEMINI_DEEP_RESEARCH_AGENT = "GEMINI_DEEP_RESEARCH_AGENT"
+ENV_GEMINI_SERVICE_TIER = "GEMINI_SERVICE_TIER"
 
 DEFAULT_MODEL = "gemini-3.1-pro-preview"
 DEFAULT_LOCATION = "global"
+
+_SERVICE_TIERS = ("flex", "standard", "priority")
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,6 +52,7 @@ class ServerConfig:
     url_context: bool = False
     code_execution: bool = False
     deep_research_agent: str = DEFAULT_DEEP_RESEARCH_AGENT
+    service_tier: str = ""
 
     def new_client(self) -> genai.Client:
         """Create a new genai.Client based on the server configuration."""
@@ -66,6 +70,11 @@ def load_config_from_env(getenv: Callable[[str], str]) -> ServerConfig:
     url_context = _is_enabled(getenv(ENV_GEMINI_ENABLE_URL_CONTEXT))
     code_execution = _is_enabled(getenv(ENV_GEMINI_ENABLE_CODE_EXECUTION))
     deep_research_agent = getenv(ENV_GEMINI_DEEP_RESEARCH_AGENT).strip() or DEFAULT_DEEP_RESEARCH_AGENT
+    raw_service_tier = getenv(ENV_GEMINI_SERVICE_TIER)
+    service_tier = raw_service_tier.strip().lower()
+    if service_tier and service_tier not in _SERVICE_TIERS:
+        allowed = ", ".join(f'"{tier}"' for tier in _SERVICE_TIERS)
+        raise ValueError(f'"{ENV_GEMINI_SERVICE_TIER}" must be one of {allowed} (or unset); got {raw_service_tier!r}')
 
     if _is_enabled(getenv(ENV_GOOGLE_GENAI_USE_VERTEXAI)):
         project = getenv(ENV_GOOGLE_CLOUD_PROJECT)
@@ -82,6 +91,7 @@ def load_config_from_env(getenv: Callable[[str], str]) -> ServerConfig:
             url_context=url_context,
             code_execution=code_execution,
             deep_research_agent=deep_research_agent,
+            service_tier=service_tier,
         )
 
     api_key = _first_non_empty(
@@ -99,6 +109,7 @@ def load_config_from_env(getenv: Callable[[str], str]) -> ServerConfig:
         url_context=url_context,
         code_execution=code_execution,
         deep_research_agent=deep_research_agent,
+        service_tier=service_tier,
     )
 
 

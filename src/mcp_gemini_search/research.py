@@ -112,11 +112,13 @@ class DeepResearchService:
         interactions: ResearchInteractions | None,
         *,
         poll_interval: float = 5.0,
+        service_tier: str = "",
     ) -> None:
-        """Store the agent name, the injected interactions API, and the poll interval."""
+        """Store the agent name, the injected interactions API, the poll interval, and the service tier."""
         self._agent = agent
         self._interactions = interactions
         self._poll_interval = poll_interval
+        self._service_tier = service_tier
 
     async def start(
         self,
@@ -156,6 +158,8 @@ class DeepResearchService:
             }
         if previous_interaction_id:
             body["previous_interaction_id"] = previous_interaction_id
+        if self._service_tier:
+            body["service_tier"] = self._service_tier
 
         try:
             interaction = await self._interactions.create(**body)

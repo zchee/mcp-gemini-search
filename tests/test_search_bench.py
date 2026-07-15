@@ -83,6 +83,7 @@ class _BenchStub:
         input: str,
         tools: Sequence[Mapping[str, str]],
         store: bool,
+        service_tier: str = "",
     ) -> interactions.Interaction:
         return self._interaction
 
