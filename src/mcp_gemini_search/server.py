@@ -52,7 +52,6 @@ class ToolName(enum.StrEnum):
     DEEP_RESEARCH_RESULT = "deep_research_result"
 
 
-SEARCH_TOOL_NAME = ToolName.GOOGLE_SEARCH
 SEARCH_TOOL_DESCRIPTION = (
     "Search the web with Google Search grounding through Gemini. Returns a "
     "Markdown answer whose claims carry inline [n] citation markers that map to "
@@ -63,7 +62,6 @@ SEARCH_TOOL_DESCRIPTION = (
     "open and read; set code_execution=true when the answer needs real "
     "computation (math, data processing) rather than retrieval alone."
 )
-RESEARCH_TOOL_NAME = ToolName.DEEP_RESEARCH
 RESEARCH_TOOL_DESCRIPTION = (
     "Start an asynchronous Gemini Deep Research run: an autonomous agent that "
     "searches the web, reads sources, and writes a long, citation-rich Markdown "
@@ -77,7 +75,6 @@ RESEARCH_TOOL_DESCRIPTION = (
     "lookups use google_search instead. Set plan_only=true to receive a "
     "research plan for review first."
 )
-RESEARCH_RESULT_TOOL_NAME = ToolName.DEEP_RESEARCH_RESULT
 RESEARCH_RESULT_TOOL_DESCRIPTION = (
     "Fetch the current state of a deep_research run by interaction_id. While "
     "status is 'in_progress' the report is not ready — wait, then call this "
@@ -127,6 +124,26 @@ _INPUT_SCHEMA: dict[str, Any] = {
     "additionalProperties": False,
 }
 
+_SOURCE_ITEM_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "index": {
+            "type": "integer",
+            "description": ("The 1-based citation index shown in the response text."),
+        },
+        "title": {
+            "type": "string",
+            "description": "The title of the cited source.",
+        },
+        "uri": {
+            "type": "string",
+            "description": "The source URL or canonical URI.",
+        },
+    },
+    "required": ["index"],
+    "additionalProperties": False,
+}
+
 _OUTPUT_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
@@ -144,25 +161,7 @@ _OUTPUT_SCHEMA: dict[str, Any] = {
         },
         "sources": {
             "type": ["null", "array"],
-            "items": {
-                "type": "object",
-                "properties": {
-                    "index": {
-                        "type": "integer",
-                        "description": ("The 1-based citation index shown in the response text."),
-                    },
-                    "title": {
-                        "type": "string",
-                        "description": "The title of the cited source.",
-                    },
-                    "uri": {
-                        "type": "string",
-                        "description": "The source URL or canonical URI.",
-                    },
-                },
-                "required": ["index"],
-                "additionalProperties": False,
-            },
+            "items": _SOURCE_ITEM_SCHEMA,
             "description": ("The cited sources; each index matches the [n] markers in text."),
         },
     },
@@ -275,25 +274,7 @@ _RESEARCH_RESULT_OUTPUT_SCHEMA: dict[str, Any] = {
         },
         "sources": {
             "type": ["null", "array"],
-            "items": {
-                "type": "object",
-                "properties": {
-                    "index": {
-                        "type": "integer",
-                        "description": ("The 1-based citation index shown in the response text."),
-                    },
-                    "title": {
-                        "type": "string",
-                        "description": "The title of the cited source.",
-                    },
-                    "uri": {
-                        "type": "string",
-                        "description": "The source URL or canonical URI.",
-                    },
-                },
-                "required": ["index"],
-                "additionalProperties": False,
-            },
+            "items": _SOURCE_ITEM_SCHEMA,
             "description": ("The report's cited sources; each index matches the [n] markers in text."),
         },
     },
@@ -317,19 +298,19 @@ async def _list_tools(  # noqa: RUF029
     return ListToolsResult(
         tools=[
             Tool(
-                name=SEARCH_TOOL_NAME,
+                name=ToolName.GOOGLE_SEARCH,
                 description=SEARCH_TOOL_DESCRIPTION,
                 input_schema=_INPUT_SCHEMA,
                 output_schema=_OUTPUT_SCHEMA,
             ),
             Tool(
-                name=RESEARCH_TOOL_NAME,
+                name=ToolName.DEEP_RESEARCH,
                 description=RESEARCH_TOOL_DESCRIPTION,
                 input_schema=_RESEARCH_INPUT_SCHEMA,
                 output_schema=_RESEARCH_OUTPUT_SCHEMA,
             ),
             Tool(
-                name=RESEARCH_RESULT_TOOL_NAME,
+                name=ToolName.DEEP_RESEARCH_RESULT,
                 description=RESEARCH_RESULT_TOOL_DESCRIPTION,
                 input_schema=_RESEARCH_RESULT_INPUT_SCHEMA,
                 output_schema=_RESEARCH_RESULT_OUTPUT_SCHEMA,
