@@ -33,6 +33,15 @@ class GoogleSearchSource:
     title: str = ""
     uri: str = ""
 
+    def to_structured(self) -> dict[str, Any]:
+        """Return the source entry dict: ``index`` always; ``title`` and ``uri`` omit-empty."""
+        entry: dict[str, Any] = {"index": self.index}
+        if self.title:
+            entry["title"] = self.title
+        if self.uri:
+            entry["uri"] = self.uri
+        return entry
+
 
 @dataclass(frozen=True, slots=True)
 class GoogleSearchOutput:
@@ -52,15 +61,7 @@ class GoogleSearchOutput:
         """
         structured: dict[str, Any] = {"query": self.query, "text": self.text}
         if self.sources:
-            source_list: list[dict[str, Any]] = []
-            for source in self.sources:
-                entry: dict[str, Any] = {"index": source.index}
-                if source.title:
-                    entry["title"] = source.title
-                if source.uri:
-                    entry["uri"] = source.uri
-                source_list.append(entry)
-            structured["sources"] = source_list
+            structured["sources"] = [source.to_structured() for source in self.sources]
         return structured
 
 
@@ -87,6 +88,16 @@ class InteractionCreator(Protocol):
         ...
 
 
+def _build_tools(url_context: bool, code_execution: bool) -> list[dict[str, str]]:
+    """Return the interaction tool declarations for the enabled optional tools."""
+    tools: list[dict[str, str]] = [{"type": "google_search"}]
+    if url_context:
+        tools.append({"type": "url_context"})
+    if code_execution:
+        tools.append({"type": "code_execution"})
+    return tools
+
+
 class GoogleSearchService:
     """Runs Google-Search-grounded Gemini interactions and formats the results."""
 
@@ -103,12 +114,7 @@ class GoogleSearchService:
         self._interactions = interactions
         self._url_context = url_context
         self._code_execution = code_execution
-        tools: list[dict[str, str]] = [{"type": "google_search"}]
-        if url_context:
-            tools.append({"type": "url_context"})
-        if code_execution:
-            tools.append({"type": "code_execution"})
-        self._tools = tools
+        self._tools = _build_tools(url_context, code_execution)
 
     @property
     def model(self) -> str:
@@ -153,13 +159,10 @@ class GoogleSearchService:
         if not query.strip():
             raise ValueError("search query cannot be empty")
 
-        effective_url_context = self._url_context if url_context is None else url_context
-        effective_code_execution = self._code_execution if code_execution is None else code_execution
-        tools: list[dict[str, str]] = [{"type": "google_search"}]
-        if effective_url_context:
-            tools.append({"type": "url_context"})
-        if effective_code_execution:
-            tools.append({"type": "code_execution"})
+        tools = _build_tools(
+            self._url_context if url_context is None else url_context,
+            self._code_execution if code_execution is None else code_execution,
+        )
 
         try:
             interaction = await self._interactions.create(
@@ -206,19 +209,29 @@ def format_interaction(
     if interaction is None:
         raise RuntimeError("no response from Gemini model")
     _raise_on_failure(interaction)
+    return _render_cited_document(_model_output_blocks(interaction.steps or []))
 
+
+def _render_cited_document(
+    grouped: Sequence[Sequence[interactions.TextContent]],
+) -> tuple[str, tuple[GoogleSearchSource, ...]]:
+    """Cite each block group with shared source numbering and render the document.
+
+    Groups join as paragraphs. The body is normalized on its own first —
+    mdformat closes any dangling code fence, so the appended Sources section
+    cannot be swallowed by one — then normalized again with the section.
+
+    Raises:
+        RuntimeError: If the groups contain no usable text.
+    """
     sources: list[GoogleSearchSource] = []
     number_by_key: dict[str, int] = {}
-    step_texts: list[str] = []
-    for blocks in _model_output_blocks(interaction):
-        step_texts.append("".join(_cite_block(block, sources, number_by_key) for block in blocks))
+    step_texts = ["".join(_cite_block(block, sources, number_by_key) for block in blocks) for blocks in grouped]
 
     body = "\n\n".join(step_texts)
     if not body.strip():
         raise RuntimeError("no response from Gemini model")
 
-    # Normalize the body on its own first: mdformat closes any dangling code
-    # fence, so the appended Sources section cannot be swallowed by one.
     document = _markdown.format_document(body)
     if sources:
         document = _markdown.format_document(f"{document}\n\n## Sources\n\n{_render_source_list(sources)}")
@@ -245,7 +258,7 @@ def _step_error_message(interaction: interactions.Interaction) -> str:
 
 
 def _model_output_blocks(
-    interaction: interactions.Interaction,
+    steps: Sequence[object],
 ) -> list[list[interactions.TextContent]]:
     """Group the non-empty text content blocks of each ``model_output`` step.
 
@@ -253,7 +266,7 @@ def _model_output_blocks(
     (images, audio) has no Markdown rendering here, so both are skipped.
     """
     grouped: list[list[interactions.TextContent]] = []
-    for step in interaction.steps or []:
+    for step in steps:
         if not isinstance(step, interactions.ModelOutputStep):
             continue
         blocks = [block for block in step.content or [] if isinstance(block, interactions.TextContent) and block.text]

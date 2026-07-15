@@ -22,12 +22,11 @@ from typing import Any, Protocol
 import anyio
 from google.genai import interactions
 
-from mcp_gemini_search import _markdown
 from mcp_gemini_search._logging import logger
 from mcp_gemini_search.search import (
     GoogleSearchSource,
-    _cite_block,
-    _render_source_list,
+    _model_output_blocks,
+    _render_cited_document,
     _step_error_message,
 )
 
@@ -73,15 +72,7 @@ class DeepResearchResult:
         if self.text:
             structured["text"] = self.text
         if self.sources:
-            source_list: list[dict[str, Any]] = []
-            for source in self.sources:
-                entry: dict[str, Any] = {"index": source.index}
-                if source.title:
-                    entry["title"] = source.title
-                if source.uri:
-                    entry["uri"] = source.uri
-                source_list.append(entry)
-            structured["sources"] = source_list
+            structured["sources"] = [source.to_structured() for source in self.sources]
         return structured
 
 
@@ -258,10 +249,9 @@ def format_research_report(
     """Format the last consecutive model-output run into Markdown and sources.
 
     Selects the last maximal consecutive run of ``ModelOutputStep`` steps in
-    ``interaction.steps``, tolerating trailing non-model-output steps. Each
-    text block is cited via ``_cite_block`` with shared source numbering; the
-    document is normalized with mdformat and a ``## Sources`` section is
-    appended when sources are present.
+    ``interaction.steps``, tolerating trailing non-model-output steps, and
+    renders it through the shared citation pipeline: ``_cite_block`` numbering,
+    mdformat normalization, and a trailing ``## Sources`` section.
 
     Raises:
         RuntimeError: If the selected run contains no usable text.
@@ -273,23 +263,4 @@ def format_research_report(
     start = end
     while start > 0 and isinstance(steps[start - 1], interactions.ModelOutputStep):
         start -= 1
-    run = steps[start:end]
-
-    sources: list[GoogleSearchSource] = []
-    number_by_key: dict[str, int] = {}
-    step_texts: list[str] = []
-    for step in run:
-        if not isinstance(step, interactions.ModelOutputStep):
-            continue
-        blocks = [block for block in step.content or [] if isinstance(block, interactions.TextContent) and block.text]
-        if blocks:
-            step_texts.append("".join(_cite_block(block, sources, number_by_key) for block in blocks))
-
-    body = "\n\n".join(step_texts)
-    if not body.strip():
-        raise RuntimeError("no response from Gemini model")
-
-    document = _markdown.format_document(body)
-    if sources:
-        document = _markdown.format_document(f"{document}\n\n## Sources\n\n{_render_source_list(sources)}")
-    return document, tuple(sources)
+    return _render_cited_document(_model_output_blocks(steps[start:end]))
