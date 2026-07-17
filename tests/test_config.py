@@ -16,6 +16,7 @@
 
 import logging
 import os
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -314,37 +315,52 @@ def _write_client_env(directory: Path) -> Path:
     return env_file
 
 
-def test_load_codex_env_loads_from_codex_home(
+@pytest.mark.parametrize(
+    ("home_env", "loader"),
+    [(ENV_CODEX_HOME, load_codex_env), (ENV_CLAUDE_HOME, load_claude_env)],
+    ids=["codex", "claude"],
+)
+def test_load_client_env_loads_from_home_env(
+    home_env: str,
+    loader: Callable[[], Path | None],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     isolated_environ: None,
 ) -> None:
-    """$CODEX_HOME/.env entries are parsed into os.environ."""
+    """$CODEX_HOME/.env and $CLAUDE_HOME/.env entries are parsed into os.environ."""
     env_file = _write_client_env(tmp_path)
-    monkeypatch.setenv(ENV_CODEX_HOME, str(tmp_path))
+    monkeypatch.setenv(home_env, str(tmp_path))
     monkeypatch.delenv(_CLIENT_TEST_VAR, raising=False)
 
-    assert load_codex_env() == env_file
+    assert loader() == env_file
     assert os.environ[_CLIENT_TEST_VAR] == "from-dotenv"
 
 
-@pytest.mark.parametrize("codex_home", [None, ""], ids=["unset", "empty"])
-def test_load_codex_env_defaults_to_home_codex(
-    codex_home: str | None,
+@pytest.mark.parametrize("home_value", [None, ""], ids=["unset", "empty"])
+@pytest.mark.parametrize(
+    ("home_env", "default_dirname", "loader"),
+    [(ENV_CODEX_HOME, ".codex", load_codex_env), (ENV_CLAUDE_HOME, ".claude", load_claude_env)],
+    ids=["codex", "claude"],
+)
+def test_load_client_env_defaults_to_home_dir(
+    home_env: str,
+    default_dirname: str,
+    loader: Callable[[], Path | None],
+    home_value: str | None,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     isolated_environ: None,
 ) -> None:
-    """An unset or empty CODEX_HOME falls back to ~/.codex/.env."""
-    env_file = _write_client_env(tmp_path / ".codex")
+    """An unset or empty CODEX_HOME/CLAUDE_HOME falls back to ~/.codex or ~/.claude."""
+    env_file = _write_client_env(tmp_path / default_dirname)
     monkeypatch.setenv("HOME", str(tmp_path))
-    if codex_home is None:
-        monkeypatch.delenv(ENV_CODEX_HOME, raising=False)
+    if home_value is None:
+        monkeypatch.delenv(home_env, raising=False)
     else:
-        monkeypatch.setenv(ENV_CODEX_HOME, codex_home)
+        monkeypatch.setenv(home_env, home_value)
     monkeypatch.delenv(_CLIENT_TEST_VAR, raising=False)
 
-    assert load_codex_env() == env_file
+    assert loader() == env_file
     assert os.environ[_CLIENT_TEST_VAR] == "from-dotenv"
 
 
@@ -478,40 +494,6 @@ def test_load_codex_env_feeds_load_config_from_env(
 
     assert load_codex_env() == tmp_path / ".env"
     assert load_config_from_env(os.getenv) == ServerConfig(model=DEFAULT_MODEL, api_key="codex-key")
-
-
-def test_load_claude_env_loads_from_claude_home(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    isolated_environ: None,
-) -> None:
-    """$CLAUDE_HOME/.env entries are parsed into os.environ."""
-    env_file = _write_client_env(tmp_path)
-    monkeypatch.setenv(ENV_CLAUDE_HOME, str(tmp_path))
-    monkeypatch.delenv(_CLIENT_TEST_VAR, raising=False)
-
-    assert load_claude_env() == env_file
-    assert os.environ[_CLIENT_TEST_VAR] == "from-dotenv"
-
-
-@pytest.mark.parametrize("claude_home", [None, ""], ids=["unset", "empty"])
-def test_load_claude_env_defaults_to_home_claude(
-    claude_home: str | None,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    isolated_environ: None,
-) -> None:
-    """An unset or empty CLAUDE_HOME falls back to ~/.claude/.env."""
-    env_file = _write_client_env(tmp_path / ".claude")
-    monkeypatch.setenv("HOME", str(tmp_path))
-    if claude_home is None:
-        monkeypatch.delenv(ENV_CLAUDE_HOME, raising=False)
-    else:
-        monkeypatch.setenv(ENV_CLAUDE_HOME, claude_home)
-    monkeypatch.delenv(_CLIENT_TEST_VAR, raising=False)
-
-    assert load_claude_env() == env_file
-    assert os.environ[_CLIENT_TEST_VAR] == "from-dotenv"
 
 
 def test_codex_dotenv_wins_over_claude_dotenv(

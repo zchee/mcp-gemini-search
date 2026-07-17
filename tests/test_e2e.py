@@ -56,6 +56,8 @@ _INIT_FRAME = (
 
 _SUBPROCESS_TIMEOUT = 20.0
 
+_NO_CLIENT_DOTENV = {"CODEX_HOME": os.devnull, "CLAUDE_HOME": os.devnull}
+
 
 def _clean_env() -> dict[str, str]:
     """Return a minimal env carrying no Gemini/Vertex configuration.
@@ -67,14 +69,13 @@ def _clean_env() -> dict[str, str]:
     """
     keys = ("PATH", "HOME", "TMPDIR", "LANG", "LC_ALL", "SYSTEMROOT")
     env = {key: os.environ[key] for key in keys if key in os.environ}
-    env["CODEX_HOME"] = os.devnull
-    env["CLAUDE_HOME"] = os.devnull
+    env.update(_NO_CLIENT_DOTENV)
     return env
 
 
 def _default_env() -> dict[str, str]:
     """Return the MCP default environment with the client dotenv lookups disabled."""
-    return {**get_default_environment(), "CODEX_HOME": os.devnull, "CLAUDE_HOME": os.devnull}
+    return {**get_default_environment(), **_NO_CLIENT_DOTENV}
 
 
 def _dummy_key_env() -> dict[str, str]:
