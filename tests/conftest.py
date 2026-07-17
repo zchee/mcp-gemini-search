@@ -14,6 +14,8 @@
 
 """Shared pytest fixtures for the test suite."""
 
+import os
+
 import pytest
 
 
@@ -21,3 +23,15 @@ import pytest
 def anyio_backend() -> str:
     """Pin anyio-backed async tests to the asyncio event loop."""
     return "asyncio"
+
+
+@pytest.fixture(autouse=True)
+def _no_codex_dotenv(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Point CODEX_HOME at a non-directory so a developer's real Codex dotenv never leaks into tests."""
+    monkeypatch.setenv("CODEX_HOME", os.devnull)
+
+
+@pytest.fixture
+def isolated_environ(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Swap os.environ for a copy so dotenv writes never leak out of a test."""
+    monkeypatch.setattr(os, "environ", os.environ.copy())

@@ -14,13 +14,16 @@
 
 """Tests for environment-driven configuration loading and client construction."""
 
+import logging
 import os
+from pathlib import Path
 
 import pytest
 
 from mcp_gemini_search.config import (
     DEFAULT_LOCATION,
     DEFAULT_MODEL,
+    ENV_CODEX_HOME,
     ENV_GEMINI_API_KEY,
     ENV_GEMINI_DEEP_RESEARCH_AGENT,
     ENV_GEMINI_ENABLE_CODE_EXECUTION,
@@ -34,6 +37,7 @@ from mcp_gemini_search.config import (
     ServerConfig,
     _first_non_empty,
     _is_enabled,
+    load_codex_env,
     load_config_from_env,
 )
 
@@ -295,3 +299,180 @@ def test_new_client_vertex_config_resolves_vertex_backend() -> None:
     )
     client = config.new_client()
     assert client.vertexai is True
+
+
+_CODEX_TEST_VAR = "MCP_GEMINI_SEARCH_CODEX_TEST_VAR"
+
+
+def _write_codex_env(directory: Path) -> Path:
+    """Create ``<directory>/.env`` holding one marker variable and return its path."""
+    directory.mkdir(parents=True, exist_ok=True)
+    env_file = directory / ".env"
+    env_file.write_text(f'{_CODEX_TEST_VAR}="from-codex"\n', encoding="utf-8")
+    return env_file
+
+
+def test_load_codex_env_loads_from_codex_home(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_environ: None,
+) -> None:
+    """$CODEX_HOME/.env entries are parsed into os.environ."""
+    env_file = _write_codex_env(tmp_path)
+    monkeypatch.setenv(ENV_CODEX_HOME, str(tmp_path))
+    monkeypatch.delenv(_CODEX_TEST_VAR, raising=False)
+
+    assert load_codex_env() == env_file
+    assert os.environ[_CODEX_TEST_VAR] == "from-codex"
+
+
+@pytest.mark.parametrize("codex_home", [None, ""], ids=["unset", "empty"])
+def test_load_codex_env_defaults_to_home_codex(
+    codex_home: str | None,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_environ: None,
+) -> None:
+    """An unset or empty CODEX_HOME falls back to ~/.codex/.env."""
+    env_file = _write_codex_env(tmp_path / ".codex")
+    monkeypatch.setenv("HOME", str(tmp_path))
+    if codex_home is None:
+        monkeypatch.delenv(ENV_CODEX_HOME, raising=False)
+    else:
+        monkeypatch.setenv(ENV_CODEX_HOME, codex_home)
+    monkeypatch.delenv(_CODEX_TEST_VAR, raising=False)
+
+    assert load_codex_env() == env_file
+    assert os.environ[_CODEX_TEST_VAR] == "from-codex"
+
+
+def test_load_codex_env_expands_tilde_codex_home(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_environ: None,
+) -> None:
+    """A leading ~ in CODEX_HOME resolves against the home directory."""
+    env_file = _write_codex_env(tmp_path / "codex-home")
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv(ENV_CODEX_HOME, "~/codex-home")
+    monkeypatch.delenv(_CODEX_TEST_VAR, raising=False)
+
+    assert load_codex_env() == env_file
+    assert os.environ[_CODEX_TEST_VAR] == "from-codex"
+
+
+def test_load_codex_env_never_overrides_process_environment(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_environ: None,
+) -> None:
+    """Variables already exported win over Codex dotenv values."""
+    env_file = _write_codex_env(tmp_path)
+    monkeypatch.setenv(ENV_CODEX_HOME, str(tmp_path))
+    monkeypatch.setenv(_CODEX_TEST_VAR, "from-process")
+
+    assert load_codex_env() == env_file
+    assert os.environ[_CODEX_TEST_VAR] == "from-process"
+
+
+def test_load_codex_env_missing_file_is_ignored(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_environ: None,
+) -> None:
+    """A CODEX_HOME without a .env file is a silent no-op."""
+    monkeypatch.setenv(ENV_CODEX_HOME, str(tmp_path))
+    monkeypatch.delenv(_CODEX_TEST_VAR, raising=False)
+
+    assert load_codex_env() is None
+    assert _CODEX_TEST_VAR not in os.environ
+
+
+@pytest.mark.parametrize(
+    "kind",
+    [
+        "directory",
+        pytest.param("fifo", marks=pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="mkfifo is POSIX-only")),
+    ],
+)
+def test_load_codex_env_non_regular_file_warns_and_skips(
+    kind: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_environ: None,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A directory or FIFO at the dotenv path warns and is skipped without blocking startup."""
+    env_file = tmp_path / ".env"
+    if kind == "directory":
+        env_file.mkdir()
+    else:
+        os.mkfifo(env_file)
+    monkeypatch.setenv(ENV_CODEX_HOME, str(tmp_path))
+    monkeypatch.delenv(_CODEX_TEST_VAR, raising=False)
+
+    with caplog.at_level(logging.WARNING, logger="mcp_gemini_search"):
+        assert load_codex_env() is None
+
+    assert "not a regular file" in caplog.text
+    assert _CODEX_TEST_VAR not in os.environ
+
+
+@pytest.mark.skipif(hasattr(os, "geteuid") and os.geteuid() == 0, reason="root bypasses file permission bits")
+def test_load_codex_env_unreadable_file_warns_and_skips(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_environ: None,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """An unreadable dotenv file logs a warning and leaves the environment untouched."""
+    env_file = _write_codex_env(tmp_path)
+    env_file.chmod(0o000)
+    monkeypatch.setenv(ENV_CODEX_HOME, str(tmp_path))
+    monkeypatch.delenv(_CODEX_TEST_VAR, raising=False)
+
+    with caplog.at_level(logging.WARNING, logger="mcp_gemini_search"):
+        assert load_codex_env() is None
+
+    assert "skip codex dotenv" in caplog.text
+    assert _CODEX_TEST_VAR not in os.environ
+
+
+def test_load_codex_env_undecodable_file_warns_and_skips(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_environ: None,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A non-UTF-8 dotenv file logs a warning instead of crashing startup."""
+    (tmp_path / ".env").write_bytes(b"\xff\xfe\x00KEY=1\n")
+    monkeypatch.setenv(ENV_CODEX_HOME, str(tmp_path))
+
+    with caplog.at_level(logging.WARNING, logger="mcp_gemini_search"):
+        assert load_codex_env() is None
+
+    assert "skip codex dotenv" in caplog.text
+
+
+def test_load_codex_env_feeds_load_config_from_env(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_environ: None,
+) -> None:
+    """A GEMINI_API_KEY stored in the Codex dotenv satisfies config resolution."""
+    (tmp_path / ".env").write_text(f'{ENV_GEMINI_API_KEY}="codex-key"\n', encoding="utf-8")
+    monkeypatch.setenv(ENV_CODEX_HOME, str(tmp_path))
+    for key in (
+        ENV_GOOGLE_API_KEY,
+        ENV_GEMINI_API_KEY,
+        ENV_GOOGLE_GENAI_USE_VERTEXAI,
+        ENV_GEMINI_MODEL,
+        ENV_GEMINI_SERVICE_TIER,
+        ENV_GEMINI_DEEP_RESEARCH_AGENT,
+        ENV_GEMINI_ENABLE_URL_CONTEXT,
+        ENV_GEMINI_ENABLE_CODE_EXECUTION,
+    ):
+        monkeypatch.delenv(key, raising=False)
+
+    assert load_codex_env() == tmp_path / ".env"
+    assert load_config_from_env(os.getenv) == ServerConfig(model=DEFAULT_MODEL, api_key="codex-key")

@@ -69,6 +69,8 @@ The bundled Codex plugin exposes the authentication environment variables from t
 }
 ```
 
+The server itself also parses `$CODEX_HOME/.env` (default `~/.codex/.env`) at startup, so keys stored there for Codex CLI are picked up automatically — see [Codex CLI dotenv](#codex-cli-dotenv).
+
 ### Bundled Claude Code plugin
 
 This repository is also a Claude Code plugin (`.claude-plugin/plugin.json` at the root). It registers the MCP server and three skills — `gemini-google-search`, `gemini-deep-research`, and `gemini-deep-research-result` — that teach the client when to search versus research, how to relay answers without dropping citations, and how to poll a Deep Research run without starting a duplicate billed run.
@@ -114,6 +116,10 @@ export GEMINI_MODEL="gemini-3.1-pro-preview"     # optional
 
 If no model is configured, the server defaults to `gemini-3.1-pro-preview`.
 
+### Codex CLI dotenv
+
+At startup the server parses `$CODEX_HOME/.env` — `~/.codex/.env` when `CODEX_HOME` is unset or empty — with [python-dotenv](https://github.com/theskumar/python-dotenv) and loads the entries into its own environment. Variables that are already exported always take precedence, and a missing file is a silent no-op. Codex CLI reads that dotenv file for itself but does not pass it to the MCP servers it spawns, so storing `GEMINI_API_KEY` there once is enough for both Codex CLI and this server — no `env` table is needed in `config.toml`. If you relocate the directory via `CODEX_HOME`, make sure that variable also reaches the server — export it, or set it in the server's `env` table.
+
 ### Environment reference
 
 | Variable                       | Default                         | Behavior                                                      |
@@ -128,6 +134,7 @@ If no model is configured, the server defaults to `gemini-3.1-pro-preview`.
 | `GEMINI_ENABLE_CODE_EXECUTION` | disabled                        | Server default for code execution on `google_search`.         |
 | `GEMINI_DEEP_RESEARCH_AGENT`   | `deep-research-preview-04-2026` | Server default for `deep_research`.                           |
 | `GEMINI_SERVICE_TIER`          | none                            | Service tier (`flex`, `standard`, `priority`) for both tools. |
+| `CODEX_HOME`                   | `~/.codex`                      | Dotenv directory parsed at startup; exported variables win.   |
 
 ### Optional built-in tools
 

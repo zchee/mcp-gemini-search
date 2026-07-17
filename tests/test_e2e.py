@@ -58,9 +58,21 @@ _SUBPROCESS_TIMEOUT = 20.0
 
 
 def _clean_env() -> dict[str, str]:
-    """Return a minimal env carrying no Gemini/Vertex configuration."""
+    """Return a minimal env carrying no Gemini/Vertex configuration.
+
+    ``CODEX_HOME`` points at ``os.devnull`` -- never a directory -- so a
+    developer's real ``~/.codex/.env`` cannot leak credentials into spawned
+    servers now that they parse the Codex dotenv file at startup.
+    """
     keys = ("PATH", "HOME", "TMPDIR", "LANG", "LC_ALL", "SYSTEMROOT")
-    return {key: os.environ[key] for key in keys if key in os.environ}
+    env = {key: os.environ[key] for key in keys if key in os.environ}
+    env["CODEX_HOME"] = os.devnull
+    return env
+
+
+def _default_env() -> dict[str, str]:
+    """Return the MCP default environment with the Codex dotenv lookup disabled."""
+    return {**get_default_environment(), "CODEX_HOME": os.devnull}
 
 
 def _dummy_key_env() -> dict[str, str]:
@@ -91,7 +103,7 @@ async def test_stdio_handshake_reports_golden_server_info_and_tool() -> None:
     golden_tools = load_golden("tools_list.json")["result"]["tools"]
     params = StdioServerParameters(
         command=str(BINARY),
-        env={**get_default_environment(), "GEMINI_API_KEY": "dummy"},
+        env={**_default_env(), "GEMINI_API_KEY": "dummy"},
     )
     with anyio.fail_after(_SUBPROCESS_TIMEOUT):
         async with stdio_client(params) as (read, write):
@@ -123,7 +135,7 @@ async def test_logpath_records_startup_line_and_jsonrpc_frames(
     params = StdioServerParameters(
         command=str(BINARY),
         args=["-logpath", str(logfile)],
-        env={**get_default_environment(), "GEMINI_API_KEY": "dummy"},
+        env={**_default_env(), "GEMINI_API_KEY": "dummy"},
     )
     with anyio.fail_after(_SUBPROCESS_TIMEOUT):
         async with stdio_client(params) as (read, write):
@@ -207,7 +219,7 @@ async def test_live_google_search_returns_grounded_text() -> None:
     api_key = os.environ.get("GEMINI_API_KEY") or os.environ["GOOGLE_API_KEY"]
     params = StdioServerParameters(
         command=str(BINARY),
-        env={**get_default_environment(), "GEMINI_API_KEY": api_key},
+        env={**_default_env(), "GEMINI_API_KEY": api_key},
     )
     with anyio.fail_after(120):
         async with stdio_client(params) as (read, write):
@@ -235,7 +247,7 @@ async def test_live_deep_research_start_and_poll_then_cancel() -> None:
     api_key = os.environ.get("GEMINI_API_KEY") or os.environ["GOOGLE_API_KEY"]
     params = StdioServerParameters(
         command=str(BINARY),
-        env={**get_default_environment(), "GEMINI_API_KEY": api_key},
+        env={**_default_env(), "GEMINI_API_KEY": api_key},
     )
     interaction_id = ""
     with anyio.fail_after(120):
@@ -279,7 +291,7 @@ async def test_live_deep_research_full_run_to_completion() -> None:
     api_key = os.environ.get("GEMINI_API_KEY") or os.environ["GOOGLE_API_KEY"]
     params = StdioServerParameters(
         command=str(BINARY),
-        env={**get_default_environment(), "GEMINI_API_KEY": api_key},
+        env={**_default_env(), "GEMINI_API_KEY": api_key},
     )
     with anyio.fail_after(15 * 60):
         async with stdio_client(params) as (read, write):

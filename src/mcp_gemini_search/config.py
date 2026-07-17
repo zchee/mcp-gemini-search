@@ -16,11 +16,15 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 
+from dotenv import load_dotenv
 from google import genai
 
+from mcp_gemini_search._logging import logger
 from mcp_gemini_search.research import DEEP_RESEARCH_AGENT as DEFAULT_DEEP_RESEARCH_AGENT
 
 ENV_GEMINI_MODEL = "GEMINI_MODEL"
@@ -33,6 +37,7 @@ ENV_GEMINI_ENABLE_URL_CONTEXT = "GEMINI_ENABLE_URL_CONTEXT"
 ENV_GEMINI_ENABLE_CODE_EXECUTION = "GEMINI_ENABLE_CODE_EXECUTION"
 ENV_GEMINI_DEEP_RESEARCH_AGENT = "GEMINI_DEEP_RESEARCH_AGENT"
 ENV_GEMINI_SERVICE_TIER = "GEMINI_SERVICE_TIER"
+ENV_CODEX_HOME = "CODEX_HOME"
 
 DEFAULT_MODEL = "gemini-3.1-pro-preview"
 DEFAULT_LOCATION = "global"
@@ -119,6 +124,38 @@ def load_config_from_env(getenv: Callable[[str], str | None]) -> ServerConfig:
         deep_research_agent=deep_research_agent,
         service_tier=service_tier,
     )
+
+
+def load_codex_env() -> Path | None:
+    """Load Codex CLI dotenv entries into the process environment.
+
+    Codex CLI keeps user secrets in ``$CODEX_HOME/.env`` (``~/.codex/.env``
+    when ``CODEX_HOME`` is unset or empty) without exporting them to the MCP
+    servers it spawns, so the file is parsed here before the configuration is
+    resolved. Variables already present in the process environment always win,
+    and a missing, non-regular, or unreadable file is skipped so non-Codex
+    launches are unaffected.
+
+    Returns the dotenv path when it contained entries, ``None`` otherwise.
+    """
+    try:
+        codex_home = os.getenv(ENV_CODEX_HOME) or ""
+        base = Path(codex_home).expanduser() if codex_home else Path.home() / ".codex"
+    except RuntimeError as e:
+        logger.warning("skip codex dotenv: cannot resolve home directory: %s", e)
+        return None
+    env_file = base / ".env"
+    if not env_file.is_file():
+        # Regular files only: python-dotenv would block forever opening a FIFO.
+        if env_file.exists():
+            logger.warning("skip codex dotenv %s: not a regular file", env_file)
+        return None
+    try:
+        loaded = load_dotenv(env_file, override=False)
+    except (OSError, ValueError) as e:
+        logger.warning("skip codex dotenv %s: %s", env_file, e)  # %s, not %r: reprs can embed file bytes
+        return None
+    return env_file if loaded else None
 
 
 def _first_non_empty(*values: str) -> str:

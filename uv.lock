@@ -628,6 +628,7 @@ dependencies = [
     { name = "mdformat" },
     { name = "mdformat-gfm" },
     { name = "orjson" },
+    { name = "python-dotenv" },
     { name = "uvloop", marker = "sys_platform != 'win32'" },
 ]
 
@@ -649,6 +650,7 @@ requires-dist = [
     { name = "mdformat", specifier = ">=1.0.0" },
     { name = "mdformat-gfm", specifier = ">=1.0.0" },
     { name = "orjson", specifier = ">=3.11.9" },
+    { name = "python-dotenv", specifier = ">=1.2.2" },
     { name = "uvloop", marker = "sys_platform != 'win32'", specifier = ">=0.22.1" },
 ]
 
