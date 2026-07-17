@@ -71,7 +71,7 @@ The bundled Codex plugin exposes the authentication environment variables from t
 
 ### Bundled Claude Code plugin
 
-The same `plugins/mcp-gemini-search` directory is also a Claude Code plugin. It registers the MCP server and three skills — `gemini-google-search`, `gemini-deep-research`, and `gemini-deep-research-result` — that teach the client when to search versus research, how to relay answers without dropping citations, and how to poll a Deep Research run without starting a duplicate billed run.
+This repository is also a Claude Code plugin (`.claude-plugin/plugin.json` at the root). It registers the MCP server and three skills — `gemini-google-search`, `gemini-deep-research`, and `gemini-deep-research-result` — that teach the client when to search versus research, how to relay answers without dropping citations, and how to poll a Deep Research run without starting a duplicate billed run.
 
 Install it from this repository's marketplace inside Claude Code:
 
@@ -83,7 +83,7 @@ Install it from this repository's marketplace inside Claude Code:
 Or load it for a single session without installing:
 
 ```bash
-claude --plugin-dir ./plugins/mcp-gemini-search
+claude --plugin-dir .
 ```
 
 The plugin starts the server with `uvx` from this repository, so `uv` must be on `PATH`, and the environment variables from [Configuration](#configuration) must be exported in the shell that launches Claude Code.
