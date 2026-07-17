@@ -60,19 +60,21 @@ _SUBPROCESS_TIMEOUT = 20.0
 def _clean_env() -> dict[str, str]:
     """Return a minimal env carrying no Gemini/Vertex configuration.
 
-    ``CODEX_HOME`` points at ``os.devnull`` -- never a directory -- so a
-    developer's real ``~/.codex/.env`` cannot leak credentials into spawned
-    servers now that they parse the Codex dotenv file at startup.
+    ``CODEX_HOME`` and ``CLAUDE_HOME`` point at ``os.devnull`` -- never a
+    directory -- so a developer's real ``~/.codex/.env`` or ``~/.claude/.env``
+    cannot leak credentials into spawned servers now that they parse the
+    client dotenv files at startup.
     """
     keys = ("PATH", "HOME", "TMPDIR", "LANG", "LC_ALL", "SYSTEMROOT")
     env = {key: os.environ[key] for key in keys if key in os.environ}
     env["CODEX_HOME"] = os.devnull
+    env["CLAUDE_HOME"] = os.devnull
     return env
 
 
 def _default_env() -> dict[str, str]:
-    """Return the MCP default environment with the Codex dotenv lookup disabled."""
-    return {**get_default_environment(), "CODEX_HOME": os.devnull}
+    """Return the MCP default environment with the client dotenv lookups disabled."""
+    return {**get_default_environment(), "CODEX_HOME": os.devnull, "CLAUDE_HOME": os.devnull}
 
 
 def _dummy_key_env() -> dict[str, str]:

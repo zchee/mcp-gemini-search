@@ -69,7 +69,7 @@ The bundled Codex plugin exposes the authentication environment variables from t
 }
 ```
 
-The server itself also parses `$CODEX_HOME/.env` (default `~/.codex/.env`) at startup, so keys stored there for Codex CLI are picked up automatically — see [Codex CLI dotenv](#codex-cli-dotenv).
+The server itself also parses `$CODEX_HOME/.env` (default `~/.codex/.env`) and `$CLAUDE_HOME/.env` (default `~/.claude/.env`) at startup, so keys stored there are picked up automatically — see [Client dotenv files](#client-dotenv-files).
 
 ### Bundled Claude Code plugin
 
@@ -88,7 +88,7 @@ Or load it for a single session without installing:
 claude --plugin-dir .
 ```
 
-The plugin starts the server with `uvx` from this repository, so `uv` must be on `PATH`, and the environment variables from [Configuration](#configuration) must be exported in the shell that launches Claude Code.
+The plugin starts the server with `uvx` from this repository, so `uv` must be on `PATH`, and the environment variables from [Configuration](#configuration) must be exported in the shell that launches Claude Code — or stored in `~/.claude/.env`, which the server parses at startup ([Client dotenv files](#client-dotenv-files)).
 
 On a cold `uv` cache the first launch clones and builds the package, which can exceed Claude Code's default MCP startup timeout (Claude Code ignores the Codex-only `startup_timeout_sec` field). If the server fails to start once, launch again — the build is cached — or raise the timeout with `MCP_TIMEOUT=60000 claude`.
 
@@ -116,9 +116,9 @@ export GEMINI_MODEL="gemini-3.1-pro-preview"     # optional
 
 If no model is configured, the server defaults to `gemini-3.1-pro-preview`.
 
-### Codex CLI dotenv
+### Client dotenv files
 
-At startup the server parses `$CODEX_HOME/.env` — `~/.codex/.env` when `CODEX_HOME` is unset or empty — with [python-dotenv](https://github.com/theskumar/python-dotenv) and loads the entries into its own environment. Variables that are already exported always take precedence, and a missing file is a silent no-op. Codex CLI reads that dotenv file for itself but does not pass it to the MCP servers it spawns, so storing `GEMINI_API_KEY` there once is enough for both Codex CLI and this server — no `env` table is needed in `config.toml`. If you relocate the directory via `CODEX_HOME`, make sure that variable also reaches the server — export it, or set it in the server's `env` table.
+At startup the server parses `$CODEX_HOME/.env` — `~/.codex/.env` when `CODEX_HOME` is unset or empty — and then `$CLAUDE_HOME/.env` — `~/.claude/.env` — with [python-dotenv](https://github.com/theskumar/python-dotenv) and loads the entries into its own environment. Variables that are already exported always take precedence, the Codex file wins over the Claude file when both define a variable, and missing files are a silent no-op. Codex CLI reads its dotenv file for itself but does not pass it to the MCP servers it spawns, so storing `GEMINI_API_KEY` in one of these files is enough for Codex CLI, Claude Code, and this server — no `env` table is needed in `config.toml`. If you relocate a directory via `CODEX_HOME` or `CLAUDE_HOME`, make sure that variable also reaches the server — export it, or set it in the client's `env` configuration.
 
 ### Environment reference
 
@@ -135,6 +135,7 @@ At startup the server parses `$CODEX_HOME/.env` — `~/.codex/.env` when `CODEX_
 | `GEMINI_DEEP_RESEARCH_AGENT`   | `deep-research-preview-04-2026` | Server default for `deep_research`.                           |
 | `GEMINI_SERVICE_TIER`          | none                            | Service tier (`flex`, `standard`, `priority`) for both tools. |
 | `CODEX_HOME`                   | `~/.codex`                      | Dotenv directory parsed at startup; exported variables win.   |
+| `CLAUDE_HOME`                  | `~/.claude`                     | Second dotenv directory parsed at startup after `CODEX_HOME`. |
 
 ### Optional built-in tools
 

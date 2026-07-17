@@ -27,7 +27,7 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 
 from mcp_gemini_search import _logging
-from mcp_gemini_search.config import load_codex_env, load_config_from_env
+from mcp_gemini_search.config import load_claude_env, load_codex_env, load_config_from_env
 from mcp_gemini_search.research import DeepResearchService
 from mcp_gemini_search.search import GoogleSearchService
 from mcp_gemini_search.server import create_server
@@ -81,9 +81,10 @@ def _run(logpath: str) -> None:
     """Configure logging, build the server, and serve until shutdown."""
     handle = _logging.setup_logging(logpath)
     try:
-        codex_env = load_codex_env()
-        if codex_env is not None:
-            _logging.logger.info("parsed codex dotenv: %s", codex_env)
+        for label, loader in (("codex", load_codex_env), ("claude", load_claude_env)):
+            env_file = loader()
+            if env_file is not None:
+                _logging.logger.info("parsed %s dotenv: %s", label, env_file)
         config = load_config_from_env(os.getenv)
 
         try:

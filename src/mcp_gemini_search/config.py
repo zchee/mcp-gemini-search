@@ -38,6 +38,7 @@ ENV_GEMINI_ENABLE_CODE_EXECUTION = "GEMINI_ENABLE_CODE_EXECUTION"
 ENV_GEMINI_DEEP_RESEARCH_AGENT = "GEMINI_DEEP_RESEARCH_AGENT"
 ENV_GEMINI_SERVICE_TIER = "GEMINI_SERVICE_TIER"
 ENV_CODEX_HOME = "CODEX_HOME"
+ENV_CLAUDE_HOME = "CLAUDE_HOME"
 
 DEFAULT_MODEL = "gemini-3.1-pro-preview"
 DEFAULT_LOCATION = "global"
@@ -138,22 +139,42 @@ def load_codex_env() -> Path | None:
 
     Returns the dotenv path when it contained entries, ``None`` otherwise.
     """
+    return _load_home_env(ENV_CODEX_HOME, ".codex")
+
+
+def load_claude_env() -> Path | None:
+    """Load Claude Code dotenv entries into the process environment.
+
+    Mirrors ``load_codex_env`` for ``$CLAUDE_HOME/.env`` (``~/.claude/.env``
+    when ``CLAUDE_HOME`` is unset or empty), with the same precedence and
+    failure handling. When both client files define a variable, the caller's
+    load order decides: the CLI loads Codex first, so its value wins under
+    ``override=False``.
+
+    Returns the dotenv path when it contained entries, ``None`` otherwise.
+    """
+    return _load_home_env(ENV_CLAUDE_HOME, ".claude")
+
+
+def _load_home_env(env_var: str, default_dirname: str) -> Path | None:
+    """Parse ``$<env_var>/.env`` (``~/<default_dirname>/.env`` fallback) into os.environ."""
+    label = default_dirname.removeprefix(".")
     try:
-        codex_home = os.getenv(ENV_CODEX_HOME) or ""
-        base = Path(codex_home).expanduser() if codex_home else Path.home() / ".codex"
+        home = os.getenv(env_var) or ""
+        base = Path(home).expanduser() if home else Path.home() / default_dirname
     except RuntimeError as e:
-        logger.warning("skip codex dotenv: cannot resolve home directory: %s", e)
+        logger.warning("skip %s dotenv: cannot resolve home directory: %s", label, e)
         return None
     env_file = base / ".env"
     if not env_file.is_file():
         # Regular files only: python-dotenv would block forever opening a FIFO.
         if env_file.exists():
-            logger.warning("skip codex dotenv %s: not a regular file", env_file)
+            logger.warning("skip %s dotenv %s: not a regular file", label, env_file)
         return None
     try:
         loaded = load_dotenv(env_file, override=False)
     except (OSError, ValueError) as e:
-        logger.warning("skip codex dotenv %s: %s", env_file, e)  # %s, not %r: reprs can embed file bytes
+        logger.warning("skip %s dotenv %s: %s", label, env_file, e)  # %s, not %r: reprs can embed file bytes
         return None
     return env_file if loaded else None
 

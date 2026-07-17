@@ -23,6 +23,7 @@ import pytest
 from mcp_gemini_search.config import (
     DEFAULT_LOCATION,
     DEFAULT_MODEL,
+    ENV_CLAUDE_HOME,
     ENV_CODEX_HOME,
     ENV_GEMINI_API_KEY,
     ENV_GEMINI_DEEP_RESEARCH_AGENT,
@@ -37,6 +38,7 @@ from mcp_gemini_search.config import (
     ServerConfig,
     _first_non_empty,
     _is_enabled,
+    load_claude_env,
     load_codex_env,
     load_config_from_env,
 )
@@ -301,14 +303,14 @@ def test_new_client_vertex_config_resolves_vertex_backend() -> None:
     assert client.vertexai is True
 
 
-_CODEX_TEST_VAR = "MCP_GEMINI_SEARCH_CODEX_TEST_VAR"
+_CLIENT_TEST_VAR = "MCP_GEMINI_SEARCH_CLIENT_TEST_VAR"
 
 
-def _write_codex_env(directory: Path) -> Path:
+def _write_client_env(directory: Path) -> Path:
     """Create ``<directory>/.env`` holding one marker variable and return its path."""
     directory.mkdir(parents=True, exist_ok=True)
     env_file = directory / ".env"
-    env_file.write_text(f'{_CODEX_TEST_VAR}="from-codex"\n', encoding="utf-8")
+    env_file.write_text(f'{_CLIENT_TEST_VAR}="from-dotenv"\n', encoding="utf-8")
     return env_file
 
 
@@ -318,12 +320,12 @@ def test_load_codex_env_loads_from_codex_home(
     isolated_environ: None,
 ) -> None:
     """$CODEX_HOME/.env entries are parsed into os.environ."""
-    env_file = _write_codex_env(tmp_path)
+    env_file = _write_client_env(tmp_path)
     monkeypatch.setenv(ENV_CODEX_HOME, str(tmp_path))
-    monkeypatch.delenv(_CODEX_TEST_VAR, raising=False)
+    monkeypatch.delenv(_CLIENT_TEST_VAR, raising=False)
 
     assert load_codex_env() == env_file
-    assert os.environ[_CODEX_TEST_VAR] == "from-codex"
+    assert os.environ[_CLIENT_TEST_VAR] == "from-dotenv"
 
 
 @pytest.mark.parametrize("codex_home", [None, ""], ids=["unset", "empty"])
@@ -334,16 +336,16 @@ def test_load_codex_env_defaults_to_home_codex(
     isolated_environ: None,
 ) -> None:
     """An unset or empty CODEX_HOME falls back to ~/.codex/.env."""
-    env_file = _write_codex_env(tmp_path / ".codex")
+    env_file = _write_client_env(tmp_path / ".codex")
     monkeypatch.setenv("HOME", str(tmp_path))
     if codex_home is None:
         monkeypatch.delenv(ENV_CODEX_HOME, raising=False)
     else:
         monkeypatch.setenv(ENV_CODEX_HOME, codex_home)
-    monkeypatch.delenv(_CODEX_TEST_VAR, raising=False)
+    monkeypatch.delenv(_CLIENT_TEST_VAR, raising=False)
 
     assert load_codex_env() == env_file
-    assert os.environ[_CODEX_TEST_VAR] == "from-codex"
+    assert os.environ[_CLIENT_TEST_VAR] == "from-dotenv"
 
 
 def test_load_codex_env_expands_tilde_codex_home(
@@ -352,13 +354,13 @@ def test_load_codex_env_expands_tilde_codex_home(
     isolated_environ: None,
 ) -> None:
     """A leading ~ in CODEX_HOME resolves against the home directory."""
-    env_file = _write_codex_env(tmp_path / "codex-home")
+    env_file = _write_client_env(tmp_path / "codex-home")
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv(ENV_CODEX_HOME, "~/codex-home")
-    monkeypatch.delenv(_CODEX_TEST_VAR, raising=False)
+    monkeypatch.delenv(_CLIENT_TEST_VAR, raising=False)
 
     assert load_codex_env() == env_file
-    assert os.environ[_CODEX_TEST_VAR] == "from-codex"
+    assert os.environ[_CLIENT_TEST_VAR] == "from-dotenv"
 
 
 def test_load_codex_env_never_overrides_process_environment(
@@ -367,12 +369,12 @@ def test_load_codex_env_never_overrides_process_environment(
     isolated_environ: None,
 ) -> None:
     """Variables already exported win over Codex dotenv values."""
-    env_file = _write_codex_env(tmp_path)
+    env_file = _write_client_env(tmp_path)
     monkeypatch.setenv(ENV_CODEX_HOME, str(tmp_path))
-    monkeypatch.setenv(_CODEX_TEST_VAR, "from-process")
+    monkeypatch.setenv(_CLIENT_TEST_VAR, "from-process")
 
     assert load_codex_env() == env_file
-    assert os.environ[_CODEX_TEST_VAR] == "from-process"
+    assert os.environ[_CLIENT_TEST_VAR] == "from-process"
 
 
 def test_load_codex_env_missing_file_is_ignored(
@@ -382,10 +384,10 @@ def test_load_codex_env_missing_file_is_ignored(
 ) -> None:
     """A CODEX_HOME without a .env file is a silent no-op."""
     monkeypatch.setenv(ENV_CODEX_HOME, str(tmp_path))
-    monkeypatch.delenv(_CODEX_TEST_VAR, raising=False)
+    monkeypatch.delenv(_CLIENT_TEST_VAR, raising=False)
 
     assert load_codex_env() is None
-    assert _CODEX_TEST_VAR not in os.environ
+    assert _CLIENT_TEST_VAR not in os.environ
 
 
 @pytest.mark.parametrize(
@@ -409,13 +411,13 @@ def test_load_codex_env_non_regular_file_warns_and_skips(
     else:
         os.mkfifo(env_file)
     monkeypatch.setenv(ENV_CODEX_HOME, str(tmp_path))
-    monkeypatch.delenv(_CODEX_TEST_VAR, raising=False)
+    monkeypatch.delenv(_CLIENT_TEST_VAR, raising=False)
 
     with caplog.at_level(logging.WARNING, logger="mcp_gemini_search"):
         assert load_codex_env() is None
 
     assert "not a regular file" in caplog.text
-    assert _CODEX_TEST_VAR not in os.environ
+    assert _CLIENT_TEST_VAR not in os.environ
 
 
 @pytest.mark.skipif(hasattr(os, "geteuid") and os.geteuid() == 0, reason="root bypasses file permission bits")
@@ -426,16 +428,16 @@ def test_load_codex_env_unreadable_file_warns_and_skips(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """An unreadable dotenv file logs a warning and leaves the environment untouched."""
-    env_file = _write_codex_env(tmp_path)
+    env_file = _write_client_env(tmp_path)
     env_file.chmod(0o000)
     monkeypatch.setenv(ENV_CODEX_HOME, str(tmp_path))
-    monkeypatch.delenv(_CODEX_TEST_VAR, raising=False)
+    monkeypatch.delenv(_CLIENT_TEST_VAR, raising=False)
 
     with caplog.at_level(logging.WARNING, logger="mcp_gemini_search"):
         assert load_codex_env() is None
 
     assert "skip codex dotenv" in caplog.text
-    assert _CODEX_TEST_VAR not in os.environ
+    assert _CLIENT_TEST_VAR not in os.environ
 
 
 def test_load_codex_env_undecodable_file_warns_and_skips(
@@ -476,3 +478,58 @@ def test_load_codex_env_feeds_load_config_from_env(
 
     assert load_codex_env() == tmp_path / ".env"
     assert load_config_from_env(os.getenv) == ServerConfig(model=DEFAULT_MODEL, api_key="codex-key")
+
+
+def test_load_claude_env_loads_from_claude_home(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_environ: None,
+) -> None:
+    """$CLAUDE_HOME/.env entries are parsed into os.environ."""
+    env_file = _write_client_env(tmp_path)
+    monkeypatch.setenv(ENV_CLAUDE_HOME, str(tmp_path))
+    monkeypatch.delenv(_CLIENT_TEST_VAR, raising=False)
+
+    assert load_claude_env() == env_file
+    assert os.environ[_CLIENT_TEST_VAR] == "from-dotenv"
+
+
+@pytest.mark.parametrize("claude_home", [None, ""], ids=["unset", "empty"])
+def test_load_claude_env_defaults_to_home_claude(
+    claude_home: str | None,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_environ: None,
+) -> None:
+    """An unset or empty CLAUDE_HOME falls back to ~/.claude/.env."""
+    env_file = _write_client_env(tmp_path / ".claude")
+    monkeypatch.setenv("HOME", str(tmp_path))
+    if claude_home is None:
+        monkeypatch.delenv(ENV_CLAUDE_HOME, raising=False)
+    else:
+        monkeypatch.setenv(ENV_CLAUDE_HOME, claude_home)
+    monkeypatch.delenv(_CLIENT_TEST_VAR, raising=False)
+
+    assert load_claude_env() == env_file
+    assert os.environ[_CLIENT_TEST_VAR] == "from-dotenv"
+
+
+def test_codex_dotenv_wins_over_claude_dotenv(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_environ: None,
+) -> None:
+    """With the CLI's codex-then-claude load order, the Codex value wins under override=False."""
+    codex_dir = tmp_path / "codex"
+    claude_dir = tmp_path / "claude"
+    codex_dir.mkdir()
+    claude_dir.mkdir()
+    (codex_dir / ".env").write_text(f'{_CLIENT_TEST_VAR}="from-codex"\n', encoding="utf-8")
+    (claude_dir / ".env").write_text(f'{_CLIENT_TEST_VAR}="from-claude"\n', encoding="utf-8")
+    monkeypatch.setenv(ENV_CODEX_HOME, str(codex_dir))
+    monkeypatch.setenv(ENV_CLAUDE_HOME, str(claude_dir))
+    monkeypatch.delenv(_CLIENT_TEST_VAR, raising=False)
+
+    assert load_codex_env() == codex_dir / ".env"
+    assert load_claude_env() == claude_dir / ".env"
+    assert os.environ[_CLIENT_TEST_VAR] == "from-codex"

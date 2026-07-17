@@ -26,9 +26,10 @@ def anyio_backend() -> str:
 
 
 @pytest.fixture(autouse=True)
-def _no_codex_dotenv(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Point CODEX_HOME at a non-directory so a developer's real Codex dotenv never leaks into tests."""
+def _no_client_dotenv(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Point CODEX_HOME/CLAUDE_HOME at a non-directory so a developer's real dotenv files never leak into tests."""
     monkeypatch.setenv("CODEX_HOME", os.devnull)
+    monkeypatch.setenv("CLAUDE_HOME", os.devnull)
 
 
 @pytest.fixture
