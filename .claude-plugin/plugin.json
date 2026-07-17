@@ -3,8 +3,7 @@
   "version": "0.0.1",
   "description": "Search the web and run citation-rich Deep Research with Gemini through MCP.",
   "author": {
-    "name": "Koichi Shiraishi",
-    "url": "https://github.com/zchee"
+    "name": "mcp-gemini-search contributors"
   },
   "homepage": "https://github.com/zchee/mcp-gemini-search",
   "repository": "https://github.com/zchee/mcp-gemini-search",
@@ -15,5 +14,11 @@
     "google-search",
     "deep-research",
     "grounding"
-  ]
+  ],
+  "skills": [
+    "./skills/gemini-deep-research/",
+    "./skills/gemini-deep-research-result/",
+    "./skills/gemini-google-search/"
+  ],
+  "mcpServers": "./.mcp.json"
 }

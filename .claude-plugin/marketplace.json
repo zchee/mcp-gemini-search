@@ -1,17 +1,21 @@
 {
+  "$schema": "https://www.schemastore.org/claude-code-marketplace.json",
   "name": "mcp-gemini-search",
   "description": "Google-grounded Gemini answers and asynchronous Deep Research reports over MCP, with skills that keep citations intact.",
   "owner": {
-    "name": "Koichi Shiraishi",
-    "url": "https://github.com/zchee"
+    "name": "zchee",
+    "url": "https://github.com/zchee",
+    "email": "zchee.io@gmail.com"
   },
   "plugins": [
     {
       "name": "mcp-gemini-search",
-      "source": "./plugins/mcp-gemini-search",
       "description": "Search the web and run citation-rich Deep Research with Gemini through MCP.",
+      "version": "0.0.1",
+      "source": "./",
       "category": "productivity",
-      "keywords": [
+      "homepage": "https://github.com/zchee/mcp-gemini-search",
+      "tags": [
         "mcp",
         "gemini",
         "google-search",
@@ -19,5 +23,6 @@
         "grounding"
       ]
     }
-  ]
+  ],
+  "version": "0.0.1"
 }

@@ -1,7 +1,7 @@
 {
   "name": "mcp-gemini-search",
   "interface": {
-    "displayName": "Gemini Search for MCP"
+    "displayName": "Gemini Search plugin"
   },
   "plugins": [
     {
