@@ -81,7 +81,7 @@ def _run(logpath: str) -> None:
     """Configure logging, build the server, and serve until shutdown."""
     handle = _logging.setup_logging(logpath)
     try:
-        config = load_config_from_env(lambda key: os.environ.get(key, ""))
+        config = load_config_from_env(os.getenv)
 
         try:
             client = config.new_client()

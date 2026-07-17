@@ -235,6 +235,15 @@ def test_load_config_from_env_errors(env: dict[str, str], want_err: str) -> None
     assert str(exc_info.value) == want_err
 
 
+def test_load_config_from_env_tolerates_none_lookups() -> None:
+    """os.getenv-style lookups returning None for missing keys resolve defaults."""
+    env = {ENV_GOOGLE_API_KEY: "test-key"}
+
+    config = load_config_from_env(env.get)
+
+    assert config == ServerConfig(model=DEFAULT_MODEL, api_key="test-key")
+
+
 def test_server_config_new_client_rejects_mutually_exclusive_settings() -> None:
     """google-genai rejects an API key combined with a Vertex project."""
     cfg = ServerConfig(model=DEFAULT_MODEL, api_key="test-key", project="project-1")
@@ -269,7 +278,7 @@ def test_new_client_resolves_gemini_backend_ignoring_vertex_env(
     monkeypatch.setenv(ENV_GEMINI_API_KEY, "gemini-key")
     monkeypatch.setenv("GOOGLE_GENAI_USE_ENTERPRISE", "true")
 
-    config = load_config_from_env(lambda key: os.environ.get(key, ""))
+    config = load_config_from_env(os.getenv)
     assert config.vertexai is False
 
     client = config.new_client()

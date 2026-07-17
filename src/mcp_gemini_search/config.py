@@ -64,25 +64,33 @@ class ServerConfig:
         )
 
 
-def load_config_from_env(getenv: Callable[[str], str]) -> ServerConfig:
-    """Resolve the server configuration from environment variable lookups."""
-    model = getenv(ENV_GEMINI_MODEL).strip() or DEFAULT_MODEL
-    url_context = _is_enabled(getenv(ENV_GEMINI_ENABLE_URL_CONTEXT))
-    code_execution = _is_enabled(getenv(ENV_GEMINI_ENABLE_CODE_EXECUTION))
-    deep_research_agent = getenv(ENV_GEMINI_DEEP_RESEARCH_AGENT).strip() or DEFAULT_DEEP_RESEARCH_AGENT
-    raw_service_tier = getenv(ENV_GEMINI_SERVICE_TIER)
+def load_config_from_env(getenv: Callable[[str], str | None]) -> ServerConfig:
+    """Resolve the server configuration from environment variable lookups.
+
+    ``getenv`` may return ``None`` for missing keys (``os.getenv`` style);
+    missing values are treated as empty strings.
+    """
+
+    def lookup(key: str) -> str:
+        return getenv(key) or ""
+
+    model = lookup(ENV_GEMINI_MODEL).strip() or DEFAULT_MODEL
+    url_context = _is_enabled(lookup(ENV_GEMINI_ENABLE_URL_CONTEXT))
+    code_execution = _is_enabled(lookup(ENV_GEMINI_ENABLE_CODE_EXECUTION))
+    deep_research_agent = lookup(ENV_GEMINI_DEEP_RESEARCH_AGENT).strip() or DEFAULT_DEEP_RESEARCH_AGENT
+    raw_service_tier = lookup(ENV_GEMINI_SERVICE_TIER)
     service_tier = raw_service_tier.strip().lower()
     if service_tier and service_tier not in _SERVICE_TIERS:
         allowed = ", ".join(f'"{tier}"' for tier in _SERVICE_TIERS)
         raise ValueError(f'"{ENV_GEMINI_SERVICE_TIER}" must be one of {allowed} (or unset); got {raw_service_tier!r}')
 
-    if _is_enabled(getenv(ENV_GOOGLE_GENAI_USE_VERTEXAI)):
-        project = getenv(ENV_GOOGLE_CLOUD_PROJECT)
+    if _is_enabled(lookup(ENV_GOOGLE_GENAI_USE_VERTEXAI)):
+        project = lookup(ENV_GOOGLE_CLOUD_PROJECT)
         if not project:
             raise ValueError(
                 f'"{ENV_GOOGLE_CLOUD_PROJECT}" environment variable is required when using Google Vertex AI'
             )
-        location = getenv(ENV_GOOGLE_CLOUD_LOCATION) or DEFAULT_LOCATION
+        location = lookup(ENV_GOOGLE_CLOUD_LOCATION) or DEFAULT_LOCATION
         return ServerConfig(
             model=model,
             vertexai=True,
@@ -95,8 +103,8 @@ def load_config_from_env(getenv: Callable[[str], str]) -> ServerConfig:
         )
 
     api_key = _first_non_empty(
-        getenv(ENV_GOOGLE_API_KEY),
-        getenv(ENV_GEMINI_API_KEY),
+        lookup(ENV_GOOGLE_API_KEY),
+        lookup(ENV_GEMINI_API_KEY),
     )
     if not api_key:
         raise ValueError(
