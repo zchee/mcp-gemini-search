@@ -237,11 +237,11 @@ class DeepResearchService:
                 sources=sources,
             )
 
-        # failed or cancelled
+        # failed or cancelled. Interaction declares no top-level ``error``
+        # field, but the model allows extras, so a failed background run can
+        # still carry one.
         top_error = getattr(interaction, "error", None)
-        if top_error is not None and not isinstance(top_error, str):
-            top_error = str(top_error)
-        detail = _step_error_message(interaction) or (top_error or "")
+        detail = _step_error_message(interaction) or ("" if top_error is None else str(top_error))
         if detail:
             raise RuntimeError(f"deep research {status}: {detail}")
         raise RuntimeError(f"deep research {status}")

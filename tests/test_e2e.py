@@ -35,6 +35,7 @@ from mcp.client.stdio import (
 from mcp_types import TextContent
 
 from mcp_gemini_search import __version__
+from tests._helpers import load_golden
 
 pytestmark = pytest.mark.anyio
 
@@ -86,12 +87,8 @@ async def _kill(proc: asyncio.subprocess.Process) -> None:
 
 async def test_stdio_handshake_reports_golden_server_info_and_tool() -> None:
     """The installed binary serves the golden serverInfo and all standard tools."""
-    golden = orjson.loads((Path(__file__).parent / "golden" / "initialize.json").read_text(encoding="utf-8"))["result"][
-        "serverInfo"
-    ]
-    golden_tools = orjson.loads((Path(__file__).parent / "golden" / "tools_list.json").read_text(encoding="utf-8"))[
-        "result"
-    ]["tools"]
+    golden = load_golden("initialize.json")["result"]["serverInfo"]
+    golden_tools = load_golden("tools_list.json")["result"]["tools"]
     params = StdioServerParameters(
         command=str(BINARY),
         env={**get_default_environment(), "GEMINI_API_KEY": "dummy"},

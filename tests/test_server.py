@@ -18,11 +18,9 @@ from __future__ import annotations
 
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from pathlib import Path
 from typing import Any
 
 import anyio
-import orjson
 import pytest
 from google import genai
 from mcp.client import Client
@@ -53,18 +51,13 @@ from mcp_gemini_search.search import (
     GoogleSearchSource,
 )
 from mcp_gemini_search.server import create_server
+from tests._helpers import load_golden
 
 pytestmark = pytest.mark.anyio
 
 # The Go golden was captured with a client that requested 2025-06-18; the server
 # echoes the requested version, so the test client must request the same value.
 REQUESTED_PROTOCOL_VERSION = "2025-06-18"
-
-_GOLDEN_DIR = Path(__file__).parent / "golden"
-
-
-def _load_golden(name: str) -> dict[str, Any]:
-    return orjson.loads((_GOLDEN_DIR / name).read_text(encoding="utf-8"))
 
 
 class _StubService(GoogleSearchService):
@@ -201,7 +194,7 @@ async def _raw_session(
 
 async def test_initialize_negotiates_golden_protocol_and_server_info() -> None:
     """initialize echoes the requested protocol version and the golden serverInfo."""
-    golden = _load_golden("initialize.json")["result"]
+    golden = load_golden("initialize.json")["result"]
     async with _raw_session(_StubService(_GROUNDED_OUTPUT)) as (_session_obj, init):
         assert init.protocol_version == REQUESTED_PROTOCOL_VERSION
         assert init.protocol_version == golden["protocolVersion"]
@@ -335,7 +328,7 @@ async def test_call_tool_rejects_invalid_arguments(
 
 async def test_tools_list_returns_three_tools() -> None:
     """list_tools returns all three standard tools in golden order."""
-    golden_tools = _load_golden("tools_list.json")["result"]["tools"]
+    golden_tools = load_golden("tools_list.json")["result"]["tools"]
     async with _client(_StubService(_GROUNDED_OUTPUT)) as client:
         result = await client.list_tools()
 

@@ -29,10 +29,7 @@ from mcp_gemini_search.search import (
     GoogleSearchService,
     format_interaction,
 )
-
-
-def _cite(url: str, title: str, end_index: int) -> interactions.URLCitation:
-    return interactions.URLCitation(url=url, title=title, start_index=0, end_index=end_index)
+from tests._helpers import url_citation as _cite
 
 
 def _benchmark_interaction() -> interactions.Interaction:

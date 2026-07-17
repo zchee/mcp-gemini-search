@@ -17,12 +17,10 @@
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 from typing import Any
 
 import anyio
 import jsonschema
-import orjson
 import pytest
 from google.genai import interactions
 
@@ -34,6 +32,11 @@ from mcp_gemini_search.research import (
     format_research_report,
 )
 from mcp_gemini_search.search import GoogleSearchSource
+from tests._helpers import golden_tool
+from tests._helpers import interaction as _interaction
+from tests._helpers import model_output as _output
+from tests._helpers import text_block as _text
+from tests._helpers import url_citation as _cite
 
 
 class StubInteractions:
@@ -75,34 +78,6 @@ class StubInteractions:
         if not self.get_responses:
             raise RuntimeError("stub interactions API has no more get responses")
         return self.get_responses.pop(0)
-
-
-def _text(text: str, *annotations: interactions.URLCitation) -> interactions.TextContent:
-    return interactions.TextContent(text=text, annotations=list(annotations) or None)
-
-
-def _cite(url: str, title: str, end_index: int) -> interactions.URLCitation:
-    return interactions.URLCitation(url=url, title=title, start_index=0, end_index=end_index)
-
-
-def _output(*blocks: Any) -> interactions.ModelOutputStep:
-    return interactions.ModelOutputStep(content=list(blocks))
-
-
-def _interaction(
-    *steps: Any,
-    status: str = "completed",
-    interaction_id: str = "i-1",
-) -> interactions.Interaction:
-    return interactions.Interaction(id=interaction_id, status=status, steps=list(steps))
-
-
-def _golden_research_schemas() -> tuple[dict[str, Any], dict[str, Any]]:
-    path = Path(__file__).parent / "golden" / "tools_list.json"
-    data = orjson.loads(path.read_text(encoding="utf-8"))
-    tools = data["result"]["tools"]
-    by_name = {tool["name"]: tool for tool in tools}
-    return by_name["deep_research"]["outputSchema"], by_name["deep_research_result"]["outputSchema"]
 
 
 @pytest.mark.anyio
@@ -477,6 +452,39 @@ async def test_result_cancelled_without_detail() -> None:
     assert str(excinfo.value) == "deep research cancelled"
 
 
+@pytest.mark.anyio
+async def test_result_failed_surfaces_top_level_error() -> None:
+    """A failed run with no step error falls back to the top-level error extra.
+
+    ``Interaction`` declares no ``error`` field, but the model allows extras,
+    so the payload of a failed background run can still carry one.
+    """
+    failed = interactions.Interaction.model_validate({
+        "id": "i-top",
+        "status": "failed",
+        "steps": [],
+        "error": {"message": "backend exploded"},
+    })
+    stub = StubInteractions(get_responses=[failed])
+    svc = DeepResearchService("agent", stub)
+
+    with pytest.raises(RuntimeError) as excinfo:
+        await svc.result("i-top", wait_seconds=0)
+    assert str(excinfo.value).startswith("deep research failed: ")
+    assert "backend exploded" in str(excinfo.value)
+
+
+@pytest.mark.anyio
+async def test_result_completed_without_output_raises() -> None:
+    """A completed run with no model output raises the wrapped no-response error."""
+    stub = StubInteractions(get_responses=[_interaction(status="completed", interaction_id="i-empty")])
+    svc = DeepResearchService("agent", stub)
+
+    with pytest.raises(RuntimeError) as excinfo:
+        await svc.result("i-empty", wait_seconds=0)
+    assert str(excinfo.value) == "deep research failed: no response from Gemini model"
+
+
 @pytest.mark.parametrize(
     "status",
     ["requires_action", "incomplete", "budget_exceeded"],
@@ -530,7 +538,8 @@ def test_to_structured_result_omits_empty_fields() -> None:
 
 def test_to_structured_validates_against_golden_schemas() -> None:
     """to_structured output validates against the deep-research golden schemas."""
-    start_schema, result_schema = _golden_research_schemas()
+    start_schema = golden_tool("deep_research")["outputSchema"]
+    result_schema = golden_tool("deep_research_result")["outputSchema"]
 
     start = DeepResearchStart(interaction_id="dr-1", status="in_progress")
     jsonschema.validate(start.to_structured(), start_schema)

@@ -117,7 +117,6 @@ class GoogleSearchService:
         self._url_context = url_context
         self._code_execution = code_execution
         self._service_tier = service_tier
-        self._tools = _build_tools(url_context, code_execution)
 
     @property
     def model(self) -> str:
@@ -126,8 +125,8 @@ class GoogleSearchService:
 
     @property
     def tools(self) -> tuple[dict[str, str], ...]:
-        """Return the tool declarations sent with every interaction request."""
-        return tuple(self._tools)
+        """Return the server-default tool declarations, before per-request overrides."""
+        return tuple(_build_tools(self._url_context, self._code_execution))
 
     async def search(
         self,

@@ -15,11 +15,8 @@
 """Tests for the Google Search grounding service."""
 
 from collections.abc import Mapping, Sequence
-from pathlib import Path
-from typing import Any
 
 import jsonschema
-import orjson
 import pytest
 from google.genai import interactions
 
@@ -31,6 +28,11 @@ from mcp_gemini_search.search import (
     _citation_text,
     format_interaction,
 )
+from tests._helpers import golden_tool
+from tests._helpers import interaction as _interaction
+from tests._helpers import model_output as _output
+from tests._helpers import text_block as _text
+from tests._helpers import url_citation as _cite
 
 
 class StubInteractions:
@@ -72,22 +74,6 @@ class StubInteractions:
         if self.interaction is None:
             raise RuntimeError("stub interactions API is misconfigured")
         return self.interaction
-
-
-def _text(text: str, *annotations: interactions.URLCitation) -> interactions.TextContent:
-    return interactions.TextContent(text=text, annotations=list(annotations) or None)
-
-
-def _cite(url: str, title: str, end_index: int) -> interactions.URLCitation:
-    return interactions.URLCitation(url=url, title=title, start_index=0, end_index=end_index)
-
-
-def _output(*blocks: interactions.TextContent) -> interactions.ModelOutputStep:
-    return interactions.ModelOutputStep(content=list(blocks))
-
-
-def _interaction(*steps: Any, status: str = "completed") -> interactions.Interaction:
-    return interactions.Interaction(status=status, steps=list(steps))
 
 
 @pytest.mark.anyio
@@ -610,16 +596,9 @@ def test_to_structured_omits_empty_sources() -> None:
     assert out.to_structured() == {"query": "q", "text": "t"}
 
 
-def _golden_output_schema() -> dict[str, Any]:
-    path = Path(__file__).parent / "golden" / "tools_list.json"
-    data = orjson.loads(path.read_text(encoding="utf-8"))
-    tool: dict[str, Any] = data["result"]["tools"][0]
-    return tool["outputSchema"]
-
-
 def test_to_structured_validates_against_golden_schema() -> None:
     """to_structured output validates against the golden outputSchema."""
-    schema = _golden_output_schema()
+    schema = golden_tool("google_search")["outputSchema"]
 
     populated = GoogleSearchOutput(
         query="q",

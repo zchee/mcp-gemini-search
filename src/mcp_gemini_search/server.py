@@ -93,7 +93,7 @@ RESEARCH_RESULT_TOOL_DESCRIPTION = (
 # outputSchema on the client side. Note the ``sources`` type is ["null", "array"]
 # (a nullable slice inherited from the retired Go server's schema generator),
 # NOT "array".
-_INPUT_SCHEMA: dict[str, Any] = {
+_SEARCH_INPUT_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
         "query": {
@@ -144,7 +144,7 @@ _SOURCE_ITEM_SCHEMA: dict[str, Any] = {
     "additionalProperties": False,
 }
 
-_OUTPUT_SCHEMA: dict[str, Any] = {
+_SEARCH_OUTPUT_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
         "query": {
@@ -284,7 +284,7 @@ _RESEARCH_RESULT_OUTPUT_SCHEMA: dict[str, Any] = {
 
 
 _TOOL_INPUT_SCHEMAS: dict[str, dict[str, Any]] = {
-    ToolName.GOOGLE_SEARCH: _INPUT_SCHEMA,
+    ToolName.GOOGLE_SEARCH: _SEARCH_INPUT_SCHEMA,
     ToolName.DEEP_RESEARCH: _RESEARCH_INPUT_SCHEMA,
     ToolName.DEEP_RESEARCH_RESULT: _RESEARCH_RESULT_INPUT_SCHEMA,
 }
@@ -300,8 +300,8 @@ async def _list_tools(  # noqa: RUF029
             Tool(
                 name=ToolName.GOOGLE_SEARCH,
                 description=SEARCH_TOOL_DESCRIPTION,
-                input_schema=_INPUT_SCHEMA,
-                output_schema=_OUTPUT_SCHEMA,
+                input_schema=_SEARCH_INPUT_SCHEMA,
+                output_schema=_SEARCH_OUTPUT_SCHEMA,
             ),
             Tool(
                 name=ToolName.DEEP_RESEARCH,
