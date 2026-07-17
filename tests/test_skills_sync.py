@@ -24,7 +24,6 @@ _REPO_ROOT = Path(__file__).parent.parent
 _PLUGIN_SKILLS = _REPO_ROOT / "skills"
 _MIRROR_SKILLS = {
     ".agents/skills": _REPO_ROOT / ".agents" / "skills",
-    ".claude/skills": _REPO_ROOT / ".claude" / "skills",
 }
 
 
@@ -34,7 +33,7 @@ def _skill_files(root: Path) -> dict[str, str]:
 
 @pytest.mark.parametrize("mirror", sorted(_MIRROR_SKILLS))
 def test_skill_trees_stay_identical(mirror: str) -> None:
-    """The same skills ship in the root ``skills/``, ``.claude``, and ``.agents`` trees.
+    """The same skills ship in the root ``skills/`` and ``.agents`` trees.
 
     Nothing synchronizes the copies mechanically, so this guard turns silent
     drift — one host shipping different guidance than another — into a test
