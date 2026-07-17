@@ -27,6 +27,7 @@ license = "Apache-2.0"
 license-files = ["LICENSE"]
 dependencies = [
     "mcp[cli]==2.0.0b1",
+    "mcp-types==2.0.0b1",
     "google-genai[aiohttp]>=2.11.0",
     "jsonschema>=4.26.0",
     "orjson>=3.11.9",
