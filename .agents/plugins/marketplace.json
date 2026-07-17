@@ -8,7 +8,7 @@
       "name": "mcp-gemini-search",
       "source": {
         "source": "local",
-        "path": "./plugins/mcp-gemini-search"
+        "path": "./"
       },
       "policy": {
         "installation": "AVAILABLE",
