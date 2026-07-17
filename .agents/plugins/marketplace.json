@@ -1,0 +1,20 @@
+{
+  "name": "mcp-gemini-search",
+  "interface": {
+    "displayName": "Gemini Search for MCP"
+  },
+  "plugins": [
+    {
+      "name": "mcp-gemini-search",
+      "source": {
+        "source": "local",
+        "path": "./plugins/mcp-gemini-search"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

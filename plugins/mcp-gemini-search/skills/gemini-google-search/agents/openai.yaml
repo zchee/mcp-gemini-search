@@ -1,0 +1,4 @@
+interface:
+  display_name: "Gemini Google Search"
+  short_description: "Search Google with Gemini-grounded citations"
+  default_prompt: "Use $gemini-google-search to search the web and return a concise answer with verifiable citations."

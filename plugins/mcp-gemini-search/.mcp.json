@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "mcp-gemini-search": {
+      "command": "uvx",
+      "args": [
+        "--prerelease=allow",
+        "--from",
+        "git+https://github.com/zchee/mcp-gemini-search",
+        "mcp-gemini-search"
+      ],
+      "startup_timeout_sec": 60
+    }
+  }
+}

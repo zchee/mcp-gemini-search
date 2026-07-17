@@ -1,0 +1,39 @@
+{
+  "$schema": "https://www.schemastore.org/codex-plugin-manifest.json",
+  "name": "mcp-gemini-search",
+  "version": "0.0.1",
+  "description": "Search the web and run citation-rich Deep Research with Gemini through MCP.",
+  "author": {
+    "name": "Koichi Shiraishi",
+    "url": "https://github.com/zchee"
+  },
+  "homepage": "https://github.com/zchee/mcp-gemini-search",
+  "repository": "https://github.com/zchee/mcp-gemini-search",
+  "license": "Apache-2.0",
+  "keywords": [
+    "mcp",
+    "gemini",
+    "google-search",
+    "deep-research",
+    "grounding"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Gemini Search & Deep Research",
+    "shortDescription": "Grounded Google Search and Deep Research with Gemini",
+    "longDescription": "Search the web with Google-grounded Gemini answers and run asynchronous, citation-rich Deep Research reports through MCP workflows.",
+    "developerName": "zchee",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive",
+      "Read"
+    ],
+    "websiteURL": "https://github.com/zchee/mcp-gemini-search",
+    "defaultPrompt": [
+      "Search the web with Gemini and cite the sources.",
+      "Research this topic deeply and return a cited report.",
+      "Check the status of my Gemini Deep Research run."
+    ]
+  }
+}

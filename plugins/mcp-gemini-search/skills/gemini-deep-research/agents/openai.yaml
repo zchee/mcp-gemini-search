@@ -1,0 +1,4 @@
+interface:
+  display_name: "Gemini Deep Research"
+  short_description: "Start a citation-rich Gemini research report"
+  default_prompt: "Use $gemini-deep-research to start a comprehensive, citation-rich research report on this topic."

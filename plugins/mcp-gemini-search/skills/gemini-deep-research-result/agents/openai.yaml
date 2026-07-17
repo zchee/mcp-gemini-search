@@ -1,0 +1,4 @@
+interface:
+  display_name: "Gemini Deep Research Result"
+  short_description: "Retrieve a Gemini Deep Research report"
+  default_prompt: "Use $gemini-deep-research-result to retrieve the latest status or completed report for this interaction ID."

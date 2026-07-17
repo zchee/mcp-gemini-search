@@ -69,6 +69,27 @@ The bundled Codex plugin exposes the authentication environment variables from t
 }
 ```
 
+### Bundled Claude Code plugin
+
+The same `plugins/mcp-gemini-search` directory is also a Claude Code plugin. It registers the MCP server and three skills — `gemini-google-search`, `gemini-deep-research`, and `gemini-deep-research-result` — that teach the client when to search versus research, how to relay answers without dropping citations, and how to poll a Deep Research run without starting a duplicate billed run.
+
+Install it from this repository's marketplace inside Claude Code:
+
+```
+/plugin marketplace add zchee/mcp-gemini-search
+/plugin install mcp-gemini-search@mcp-gemini-search
+```
+
+Or load it for a single session without installing:
+
+```bash
+claude --plugin-dir ./plugins/mcp-gemini-search
+```
+
+The plugin starts the server with `uvx` from this repository, so `uv` must be on `PATH`, and the environment variables from [Configuration](#configuration) must be exported in the shell that launches Claude Code.
+
+On a cold `uv` cache the first launch clones and builds the package, which can exceed Claude Code's default MCP startup timeout (Claude Code ignores the Codex-only `startup_timeout_sec` field). If the server fails to start once, launch again — the build is cached — or raise the timeout with `MCP_TIMEOUT=60000 claude`.
+
 ## Configuration
 
 ### Google AI Studio
