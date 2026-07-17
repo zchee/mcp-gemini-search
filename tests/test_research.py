@@ -80,6 +80,18 @@ class StubInteractions:
         return self.get_responses.pop(0)
 
 
+class _NoneResponses:
+    """Returns None from both API calls to exercise the defensive guards."""
+
+    async def create(self, **kwargs: Any) -> Any:
+        """Return None in place of an interaction."""
+        return None
+
+    async def get(self, interaction_id: str, /) -> Any:
+        """Return None in place of an interaction."""
+        return None
+
+
 @pytest.mark.anyio
 async def test_start_issues_background_create() -> None:
     """start() issues create with agent, input, and background=True only."""
@@ -470,8 +482,44 @@ async def test_result_failed_surfaces_top_level_error() -> None:
 
     with pytest.raises(RuntimeError) as excinfo:
         await svc.result("i-top", wait_seconds=0)
-    assert str(excinfo.value).startswith("deep research failed: ")
-    assert "backend exploded" in str(excinfo.value)
+    assert str(excinfo.value) == "deep research failed: backend exploded"
+
+
+@pytest.mark.anyio
+async def test_result_failed_top_level_error_without_message() -> None:
+    """A top-level error extra with no message field falls back to its str form."""
+    failed = interactions.Interaction.model_validate({
+        "id": "i-code",
+        "status": "failed",
+        "steps": [],
+        "error": {"code": 500},
+    })
+    stub = StubInteractions(get_responses=[failed])
+    svc = DeepResearchService("agent", stub)
+
+    with pytest.raises(RuntimeError) as excinfo:
+        await svc.result("i-code", wait_seconds=0)
+    assert str(excinfo.value) == "deep research failed: {'code': 500}"
+
+
+@pytest.mark.anyio
+async def test_result_none_response_raises() -> None:
+    """A None get response raises the no-response error instead of AttributeError."""
+    svc = DeepResearchService("agent", _NoneResponses())
+
+    with pytest.raises(RuntimeError) as excinfo:
+        await svc.result("i-none", wait_seconds=0)
+    assert str(excinfo.value) == "deep research failed: no response from Gemini API"
+
+
+@pytest.mark.anyio
+async def test_start_none_response_raises() -> None:
+    """A None create response raises the missing-id error instead of AttributeError."""
+    svc = DeepResearchService("agent", _NoneResponses())
+
+    with pytest.raises(RuntimeError) as excinfo:
+        await svc.start("q")
+    assert str(excinfo.value) == "deep research failed: missing interaction id"
 
 
 @pytest.mark.anyio

@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -166,7 +167,7 @@ class DeepResearchService:
         except Exception as e:
             raise RuntimeError(f"deep research failed: {e}") from e
 
-        if not interaction.id:
+        if interaction is None or not interaction.id:
             raise RuntimeError("deep research failed: missing interaction id")
 
         logger.info(
@@ -206,6 +207,8 @@ class DeepResearchService:
             except Exception as e:
                 raise RuntimeError(f"deep research failed: {e}") from e
 
+            if interaction is None:
+                raise RuntimeError("deep research failed: no response from Gemini API")
             status = interaction.status
             logger.info("deep research poll: id=%s status=%s", interaction_id, status)
 
@@ -240,11 +243,28 @@ class DeepResearchService:
         # failed or cancelled. Interaction declares no top-level ``error``
         # field, but the model allows extras, so a failed background run can
         # still carry one.
-        top_error = getattr(interaction, "error", None)
-        detail = _step_error_message(interaction) or ("" if top_error is None else str(top_error))
+        detail = _step_error_message(interaction) or _top_error_detail(getattr(interaction, "error", None))
         if detail:
             raise RuntimeError(f"deep research {status}: {detail}")
         raise RuntimeError(f"deep research {status}")
+
+
+def _top_error_detail(error: object) -> str:
+    """Render a top-level interaction error extra as a human-readable message.
+
+    A failed run's payload usually carries ``{"message": ...}`` (kept only via
+    pydantic ``extra="allow"``, so it arrives as a plain dict); fall back to
+    ``str`` for payloads with no usable message field.
+    """
+    if error is None:
+        return ""
+    if isinstance(error, Mapping):
+        message = error.get("message") or error.get("detail")
+    else:
+        message = getattr(error, "message", None)
+    if isinstance(message, str) and message:
+        return message
+    return str(error)
 
 
 def format_research_report(
