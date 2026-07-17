@@ -17,11 +17,12 @@
 from __future__ import annotations
 
 import os
+import stat
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from dotenv import load_dotenv
+from dotenv import dotenv_values
 from google import genai
 
 from mcp_gemini_search._logging import logger
@@ -40,7 +41,22 @@ ENV_GEMINI_ENABLE_CODE_EXECUTION = "GEMINI_ENABLE_CODE_EXECUTION"
 ENV_GEMINI_DEEP_RESEARCH_AGENT = "GEMINI_DEEP_RESEARCH_AGENT"
 ENV_GEMINI_SERVICE_TIER = "GEMINI_SERVICE_TIER"
 ENV_CODEX_HOME = "CODEX_HOME"
-ENV_CLAUDE_HOME = "CLAUDE_HOME"
+
+CONFIG_ENV_VARS = (
+    ENV_GEMINI_MODEL,
+    ENV_GOOGLE_API_KEY,
+    ENV_GEMINI_API_KEY,
+    ENV_GOOGLE_CLOUD_PROJECT,
+    ENV_GOOGLE_CLOUD_LOCATION,
+    ENV_GOOGLE_GENAI_USE_VERTEXAI,
+    ENV_GEMINI_ENABLE_URL_CONTEXT,
+    ENV_GEMINI_ENABLE_CODE_EXECUTION,
+    ENV_GEMINI_DEEP_RESEARCH_AGENT,
+    ENV_GEMINI_SERVICE_TIER,
+)
+"""Unprefixed configuration names; each is also recognized under ``ENV_PREFIX``."""
+
+_CLIENT_IMPORT_VARS = frozenset(CONFIG_ENV_VARS) | {ENV_PREFIX + name for name in CONFIG_ENV_VARS}
 
 DEFAULT_MODEL = "gemini-3.1-pro-preview"
 DEFAULT_LOCATION = "global"
@@ -110,7 +126,8 @@ def load_config_from_env(getenv: Callable[[str], str | None]) -> ServerConfig:
         project = lookup(ENV_GOOGLE_CLOUD_PROJECT)
         if not project:
             raise ValueError(
-                f'"{ENV_GOOGLE_CLOUD_PROJECT}" environment variable is required when using Google Vertex AI'
+                f'"{ENV_GOOGLE_CLOUD_PROJECT}" or "{ENV_PREFIX}{ENV_GOOGLE_CLOUD_PROJECT}" environment '
+                "variable is required when using Google Vertex AI"
             )
         location = lookup(ENV_GOOGLE_CLOUD_LOCATION) or DEFAULT_LOCATION
         return ServerConfig(
@@ -132,8 +149,8 @@ def load_config_from_env(getenv: Callable[[str], str | None]) -> ServerConfig:
     )
     if not api_key:
         raise ValueError(
-            f'"{ENV_GOOGLE_API_KEY}" or "{ENV_GEMINI_API_KEY}" environment '
-            "variable is required when using Google AI Studio"
+            f'"{ENV_GOOGLE_API_KEY}" or "{ENV_GEMINI_API_KEY}" (or an "{ENV_PREFIX}"-prefixed variant) '
+            "environment variable is required when using Google AI Studio"
         )
     return ServerConfig(
         model=model,
@@ -146,59 +163,90 @@ def load_config_from_env(getenv: Callable[[str], str | None]) -> ServerConfig:
 
 
 def load_codex_env() -> Path | None:
-    """Load Codex CLI dotenv entries into the process environment.
+    """Import recognized Codex CLI dotenv entries into the process environment.
 
     Codex CLI keeps user secrets in ``$CODEX_HOME/.env`` (``~/.codex/.env``
-    when ``CODEX_HOME`` is unset or empty) without exporting them to the MCP
-    servers it spawns, so the file is parsed here before the configuration is
-    resolved. Variables already present in the process environment always win,
-    and a missing, non-regular, or unreadable file is skipped so non-Codex
-    launches are unaffected.
+    when ``CODEX_HOME`` is unset or blank) without exporting them to the MCP
+    servers it spawns, so the file is parsed before the configuration is
+    resolved. Only the names in ``CONFIG_ENV_VARS`` and their ``ENV_PREFIX``
+    variants are imported; every other entry — including the home variables
+    themselves and ``PYTHON_DOTENV_DISABLED`` — never reaches ``os.environ``.
+    Variables already present in the process environment always win, and a
+    missing, non-regular, or unreadable file is skipped so non-Codex launches
+    are unaffected.
 
-    Returns the dotenv path when it contained entries, ``None`` otherwise.
+    Returns the dotenv path when it contained recognized entries, ``None``
+    otherwise.
     """
-    return _load_home_env(ENV_CODEX_HOME, ".codex")
+    env_file = _client_env_file("codex", ENV_CODEX_HOME, ".codex")
+    if env_file is None:
+        return None
+    return _import_client_env("codex", env_file)
 
 
-def load_claude_env() -> Path | None:
-    """Load Claude Code dotenv entries into the process environment.
-
-    Mirrors ``load_codex_env`` for ``$CLAUDE_HOME/.env`` (``~/.claude/.env``
-    when ``CLAUDE_HOME`` is unset or empty), with the same precedence and
-    failure handling. When both client files define a variable, the caller's
-    load order decides: the CLI loads Codex first, so its value wins under
-    ``override=False``.
-
-    Returns the dotenv path when it contained entries, ``None`` otherwise.
-    """
-    return _load_home_env(ENV_CLAUDE_HOME, ".claude")
-
-
-def _load_home_env(env_var: str, default_dirname: str) -> Path | None:
-    """Parse ``$<env_var>/.env`` (``~/<default_dirname>/.env`` fallback) into os.environ.
+def _client_env_file(label: str, env_var: str, default_dirname: str) -> Path | None:
+    """Resolve ``$<env_var>/.env`` (``~/<default_dirname>/.env`` fallback).
 
     ``MCP_GEMINI_<env_var>`` overrides ``<env_var>`` so the server's dotenv
-    directory can be relocated without moving the client's own home.
+    directory can be relocated without moving the client's own home; blank
+    values fall through like every other prefixed variable. Neither name is
+    importable from the dotenv file itself, so both must come from the
+    process environment.
     """
-    label = default_dirname.removeprefix(".")
+    home = ""
+    for candidate in (os.getenv(ENV_PREFIX + env_var), os.getenv(env_var)):
+        if candidate and candidate.strip():
+            home = candidate
+            break
     try:
-        home = os.getenv(ENV_PREFIX + env_var) or os.getenv(env_var) or ""
         base = Path(home).expanduser() if home else Path.home() / default_dirname
     except RuntimeError as e:
         logger.warning("skip %s dotenv: cannot resolve home directory: %s", label, e)
         return None
-    env_file = base / ".env"
-    if not env_file.is_file():
-        # Regular files only: python-dotenv would block forever opening a FIFO.
-        if env_file.exists():
-            logger.warning("skip %s dotenv %s: not a regular file", label, env_file)
+    return base / ".env"
+
+
+def _import_client_env(label: str, env_file: Path) -> Path | None:
+    """Import recognized ``env_file`` entries without overriding ``os.environ``.
+
+    The file is opened once and required by ``fstat`` to be a regular file so
+    a FIFO swapped in after a path check can never block startup; symlinks are
+    followed deliberately. ``${VAR}`` interpolation is disabled so a value
+    from one source can never be assembled from another. Honors python-dotenv's
+    ``PYTHON_DOTENV_DISABLED`` opt-out.
+    """
+    if _dotenv_disabled():
+        logger.debug("skip %s dotenv %s: disabled by PYTHON_DOTENV_DISABLED", label, env_file)
         return None
     try:
-        loaded = load_dotenv(env_file, override=False)
-    except (OSError, ValueError) as e:
+        fd = os.open(env_file, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_CLOEXEC", 0))
+    except (FileNotFoundError, NotADirectoryError):
+        return None
+    except OSError as e:
         logger.warning("skip %s dotenv %s: %s", label, env_file, e)  # %s, not %r: reprs can embed file bytes
         return None
-    return env_file if loaded else None
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            logger.warning("skip %s dotenv %s: not a regular file", label, env_file)
+            return None
+        with os.fdopen(fd, encoding="utf-8") as stream:
+            fd = -1
+            parsed = dotenv_values(stream=stream, interpolate=False)
+    except (OSError, ValueError) as e:
+        logger.warning("skip %s dotenv %s: %s", label, env_file, e)
+        return None
+    finally:
+        if fd >= 0:
+            os.close(fd)
+    recognized = {key: value for key, value in parsed.items() if key in _CLIENT_IMPORT_VARS and value is not None}
+    for key, value in recognized.items():
+        os.environ.setdefault(key, value)
+    return env_file if recognized else None
+
+
+def _dotenv_disabled() -> bool:
+    """Mirror python-dotenv's ``PYTHON_DOTENV_DISABLED`` opt-out for stream parsing."""
+    return os.getenv("PYTHON_DOTENV_DISABLED", "").casefold() in {"1", "true", "t", "yes", "y"}
 
 
 def _first_non_empty(*values: str) -> str:

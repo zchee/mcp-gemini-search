@@ -16,7 +16,6 @@
 
 import logging
 import os
-from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -24,7 +23,6 @@ import pytest
 from mcp_gemini_search.config import (
     DEFAULT_LOCATION,
     DEFAULT_MODEL,
-    ENV_CLAUDE_HOME,
     ENV_CODEX_HOME,
     ENV_GEMINI_API_KEY,
     ENV_GEMINI_DEEP_RESEARCH_AGENT,
@@ -40,7 +38,6 @@ from mcp_gemini_search.config import (
     ServerConfig,
     _first_non_empty,
     _is_enabled,
-    load_claude_env,
     load_codex_env,
     load_config_from_env,
 )
@@ -293,11 +290,13 @@ def test_load_config_from_env(env: dict[str, str], want: ServerConfig) -> None:
     [
         (
             {},
-            '"GOOGLE_API_KEY" or "GEMINI_API_KEY" environment variable is required when using Google AI Studio',
+            '"GOOGLE_API_KEY" or "GEMINI_API_KEY" (or an "MCP_GEMINI_"-prefixed variant) '
+            "environment variable is required when using Google AI Studio",
         ),
         (
             {ENV_GOOGLE_GENAI_USE_VERTEXAI: "true"},
-            '"GOOGLE_CLOUD_PROJECT" environment variable is required when using Google Vertex AI',
+            '"GOOGLE_CLOUD_PROJECT" or "MCP_GEMINI_GOOGLE_CLOUD_PROJECT" environment '
+            "variable is required when using Google Vertex AI",
         ),
         (
             {ENV_GOOGLE_API_KEY: "test-key", ENV_GEMINI_SERVICE_TIER: "turbo"},
@@ -309,7 +308,8 @@ def test_load_config_from_env(env: dict[str, str], want: ServerConfig) -> None:
         ),
         (
             {ENV_PREFIX + ENV_GOOGLE_GENAI_USE_VERTEXAI: "true"},
-            '"GOOGLE_CLOUD_PROJECT" environment variable is required when using Google Vertex AI',
+            '"GOOGLE_CLOUD_PROJECT" or "MCP_GEMINI_GOOGLE_CLOUD_PROJECT" environment '
+            "variable is required when using Google Vertex AI",
         ),
     ],
     ids=[
@@ -393,86 +393,69 @@ def test_new_client_vertex_config_resolves_vertex_backend() -> None:
     assert client.vertexai is True
 
 
-_CLIENT_TEST_VAR = "MCP_GEMINI_SEARCH_CLIENT_TEST_VAR"
+_CLIENT_TEST_VAR = ENV_GEMINI_MODEL
+_UNSUPPORTED_TEST_VAR = "MCP_GEMINI_SEARCH_CLIENT_TEST_VAR"
 
 
-def _write_client_env(directory: Path) -> Path:
-    """Create ``<directory>/.env`` holding one marker variable and return its path."""
+def _write_client_env(directory: Path, value: str = "from-dotenv") -> Path:
+    """Create ``<directory>/.env`` with a recognized marker and an unrecognized decoy, returning its path."""
     directory.mkdir(parents=True, exist_ok=True)
     env_file = directory / ".env"
-    env_file.write_text(f'{_CLIENT_TEST_VAR}="from-dotenv"\n', encoding="utf-8")
+    env_file.write_text(
+        f'{_CLIENT_TEST_VAR}="{value}"\n{_UNSUPPORTED_TEST_VAR}="never-imported"\n',
+        encoding="utf-8",
+    )
     return env_file
 
 
-@pytest.mark.parametrize(
-    ("home_env", "loader"),
-    [(ENV_CODEX_HOME, load_codex_env), (ENV_CLAUDE_HOME, load_claude_env)],
-    ids=["codex", "claude"],
-)
-def test_load_client_env_loads_from_home_env(
-    home_env: str,
-    loader: Callable[[], Path | None],
+def test_load_codex_env_loads_from_home_env(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     isolated_environ: None,
 ) -> None:
-    """$CODEX_HOME/.env and $CLAUDE_HOME/.env entries are parsed into os.environ."""
+    """$CODEX_HOME/.env entries are parsed into os.environ."""
     env_file = _write_client_env(tmp_path)
-    monkeypatch.setenv(home_env, str(tmp_path))
+    monkeypatch.setenv(ENV_CODEX_HOME, str(tmp_path))
     monkeypatch.delenv(_CLIENT_TEST_VAR, raising=False)
 
-    assert loader() == env_file
+    assert load_codex_env() == env_file
     assert os.environ[_CLIENT_TEST_VAR] == "from-dotenv"
+    assert _UNSUPPORTED_TEST_VAR not in os.environ
 
 
-@pytest.mark.parametrize("home_value", [None, ""], ids=["unset", "empty"])
-@pytest.mark.parametrize(
-    ("home_env", "default_dirname", "loader"),
-    [(ENV_CODEX_HOME, ".codex", load_codex_env), (ENV_CLAUDE_HOME, ".claude", load_claude_env)],
-    ids=["codex", "claude"],
-)
-def test_load_client_env_defaults_to_home_dir(
-    home_env: str,
-    default_dirname: str,
-    loader: Callable[[], Path | None],
+@pytest.mark.parametrize("home_value", [None, "", "   "], ids=["unset", "empty", "blank"])
+def test_load_codex_env_defaults_to_home_dir(
     home_value: str | None,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     isolated_environ: None,
 ) -> None:
-    """An unset or empty CODEX_HOME/CLAUDE_HOME falls back to ~/.codex or ~/.claude."""
-    env_file = _write_client_env(tmp_path / default_dirname)
+    """An unset, empty, or blank CODEX_HOME falls back to ~/.codex."""
+    env_file = _write_client_env(tmp_path / ".codex")
     monkeypatch.setenv("HOME", str(tmp_path))
     if home_value is None:
-        monkeypatch.delenv(home_env, raising=False)
+        monkeypatch.delenv(ENV_CODEX_HOME, raising=False)
     else:
-        monkeypatch.setenv(home_env, home_value)
+        monkeypatch.setenv(ENV_CODEX_HOME, home_value)
     monkeypatch.delenv(_CLIENT_TEST_VAR, raising=False)
 
-    assert loader() == env_file
+    assert load_codex_env() == env_file
     assert os.environ[_CLIENT_TEST_VAR] == "from-dotenv"
 
 
-@pytest.mark.parametrize(
-    ("home_env", "loader"),
-    [(ENV_CODEX_HOME, load_codex_env), (ENV_CLAUDE_HOME, load_claude_env)],
-    ids=["codex", "claude"],
-)
-def test_load_client_env_prefixed_home_overrides_base(
-    home_env: str,
-    loader: Callable[[], Path | None],
+def test_load_codex_env_prefixed_home_overrides_base(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     isolated_environ: None,
 ) -> None:
-    """MCP_GEMINI_-prefixed home variables win over the client's own home variable."""
+    """The MCP_GEMINI_-prefixed home variable wins over the client's own home variable."""
     env_file = _write_client_env(tmp_path / "prefixed")
     _write_client_env(tmp_path / "base")
-    monkeypatch.setenv(ENV_PREFIX + home_env, str(tmp_path / "prefixed"))
-    monkeypatch.setenv(home_env, str(tmp_path / "base"))
+    monkeypatch.setenv(ENV_PREFIX + ENV_CODEX_HOME, str(tmp_path / "prefixed"))
+    monkeypatch.setenv(ENV_CODEX_HOME, str(tmp_path / "base"))
     monkeypatch.delenv(_CLIENT_TEST_VAR, raising=False)
 
-    assert loader() == env_file
+    assert load_codex_env() == env_file
     assert os.environ[_CLIENT_TEST_VAR] == "from-dotenv"
 
 
@@ -608,22 +591,111 @@ def test_load_codex_env_feeds_load_config_from_env(
     assert load_config_from_env(os.getenv) == ServerConfig(model=DEFAULT_MODEL, api_key="codex-key")
 
 
-def test_codex_dotenv_wins_over_claude_dotenv(
+def test_load_codex_env_blank_prefixed_home_falls_back(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     isolated_environ: None,
 ) -> None:
-    """With the CLI's codex-then-claude load order, the Codex value wins under override=False."""
-    codex_dir = tmp_path / "codex"
-    claude_dir = tmp_path / "claude"
-    codex_dir.mkdir()
-    claude_dir.mkdir()
-    (codex_dir / ".env").write_text(f'{_CLIENT_TEST_VAR}="from-codex"\n', encoding="utf-8")
-    (claude_dir / ".env").write_text(f'{_CLIENT_TEST_VAR}="from-claude"\n', encoding="utf-8")
-    monkeypatch.setenv(ENV_CODEX_HOME, str(codex_dir))
-    monkeypatch.setenv(ENV_CLAUDE_HOME, str(claude_dir))
+    """A whitespace-only prefixed home falls back to the client's own home variable."""
+    env_file = _write_client_env(tmp_path / "base")
+    monkeypatch.setenv(ENV_PREFIX + ENV_CODEX_HOME, "   ")
+    monkeypatch.setenv(ENV_CODEX_HOME, str(tmp_path / "base"))
     monkeypatch.delenv(_CLIENT_TEST_VAR, raising=False)
 
-    assert load_codex_env() == codex_dir / ".env"
-    assert load_claude_env() == claude_dir / ".env"
-    assert os.environ[_CLIENT_TEST_VAR] == "from-codex"
+    assert load_codex_env() == env_file
+    assert os.environ[_CLIENT_TEST_VAR] == "from-dotenv"
+
+
+def test_load_client_env_ignores_unrecognized_entries(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_environ: None,
+) -> None:
+    """A dotenv holding only unrecognized names imports nothing and reports no load."""
+    (tmp_path / ".env").write_text(
+        f'{_UNSUPPORTED_TEST_VAR}="secret"\nHTTPS_PROXY="http://proxy.invalid"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv(ENV_CODEX_HOME, str(tmp_path))
+    monkeypatch.delenv("HTTPS_PROXY", raising=False)
+
+    assert load_codex_env() is None
+    assert _UNSUPPORTED_TEST_VAR not in os.environ
+    assert "HTTPS_PROXY" not in os.environ
+
+
+def test_load_codex_env_ignores_loader_control_entries(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_environ: None,
+) -> None:
+    """Loader-control names inside the dotenv never reach os.environ."""
+    attacker_dir = tmp_path / "attacker"
+    attacker_dir.mkdir()
+    (attacker_dir / ".env").write_text(f'{ENV_GEMINI_API_KEY}="attacker-key"\n', encoding="utf-8")
+    (tmp_path / ".env").write_text(
+        f'{ENV_PREFIX}{ENV_CODEX_HOME}="{attacker_dir}"\n'
+        f'{ENV_CODEX_HOME}="{attacker_dir}"\n'
+        'PYTHON_DOTENV_DISABLED="1"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv(ENV_CODEX_HOME, str(tmp_path))
+    monkeypatch.delenv(ENV_GEMINI_API_KEY, raising=False)
+
+    assert load_codex_env() is None
+    assert os.environ[ENV_CODEX_HOME] == str(tmp_path)
+    assert ENV_PREFIX + ENV_CODEX_HOME not in os.environ
+    assert "PYTHON_DOTENV_DISABLED" not in os.environ
+    assert ENV_GEMINI_API_KEY not in os.environ
+
+
+def test_load_client_env_does_not_interpolate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_environ: None,
+) -> None:
+    """``${VAR}`` references stay literal so a value can never be assembled from another source."""
+    (tmp_path / ".env").write_text(f'{ENV_GEMINI_API_KEY}="${{{ENV_GOOGLE_API_KEY}}}"\n', encoding="utf-8")
+    monkeypatch.setenv(ENV_CODEX_HOME, str(tmp_path))
+    monkeypatch.setenv(ENV_GOOGLE_API_KEY, "process-key")
+    monkeypatch.delenv(ENV_GEMINI_API_KEY, raising=False)
+
+    assert load_codex_env() == tmp_path / ".env"
+    assert os.environ[ENV_GEMINI_API_KEY] == f"${{{ENV_GOOGLE_API_KEY}}}"
+
+
+def test_load_client_env_honors_python_dotenv_disabled(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_environ: None,
+) -> None:
+    """An exported PYTHON_DOTENV_DISABLED=1 skips client dotenv loading entirely."""
+    _write_client_env(tmp_path)
+    monkeypatch.setenv(ENV_CODEX_HOME, str(tmp_path))
+    monkeypatch.setenv("PYTHON_DOTENV_DISABLED", "1")
+    monkeypatch.delenv(_CLIENT_TEST_VAR, raising=False)
+
+    assert load_codex_env() is None
+    assert _CLIENT_TEST_VAR not in os.environ
+
+
+@pytest.fixture
+def _polluted_host_environ(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Simulate a developer exporting server settings globally before the isolation fixture runs."""
+    monkeypatch.setenv(ENV_PREFIX + ENV_GEMINI_MODEL, "polluted-model")
+    monkeypatch.setenv(ENV_PREFIX + ENV_GOOGLE_API_KEY, "polluted-key")
+    monkeypatch.setenv("PYTHON_DOTENV_DISABLED", "1")
+
+
+def test_isolated_environ_scrubs_host_configuration(
+    _polluted_host_environ: None,
+    isolated_environ: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Host-exported MCP_GEMINI_* settings and PYTHON_DOTENV_DISABLED never leak into isolated tests."""
+    assert ENV_PREFIX + ENV_GEMINI_MODEL not in os.environ
+    assert ENV_PREFIX + ENV_GOOGLE_API_KEY not in os.environ
+    assert "PYTHON_DOTENV_DISABLED" not in os.environ
+
+    monkeypatch.setenv(ENV_GEMINI_API_KEY, "test-key")
+    assert load_config_from_env(os.getenv) == ServerConfig(model=DEFAULT_MODEL, api_key="test-key")

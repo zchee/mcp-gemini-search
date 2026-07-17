@@ -44,7 +44,8 @@ pytestmark = pytest.mark.anyio
 BINARY = Path(sys.executable).parent / "mcp-gemini-search"
 
 _MISSING_API_KEY_ERROR = (
-    '"GOOGLE_API_KEY" or "GEMINI_API_KEY" environment variable is required when using Google AI Studio'
+    '"GOOGLE_API_KEY" or "GEMINI_API_KEY" (or an "MCP_GEMINI_"-prefixed variant) '
+    "environment variable is required when using Google AI Studio"
 )
 _STARTUP_LINE = "gemini google search mcp server running on stdio"
 
@@ -56,16 +57,15 @@ _INIT_FRAME = (
 
 _SUBPROCESS_TIMEOUT = 20.0
 
-_NO_CLIENT_DOTENV = {"CODEX_HOME": os.devnull, "CLAUDE_HOME": os.devnull}
+_NO_CLIENT_DOTENV = {"CODEX_HOME": os.devnull}
 
 
 def _clean_env() -> dict[str, str]:
     """Return a minimal env carrying no Gemini/Vertex configuration.
 
-    ``CODEX_HOME`` and ``CLAUDE_HOME`` point at ``os.devnull`` -- never a
-    directory -- so a developer's real ``~/.codex/.env`` or ``~/.claude/.env``
-    cannot leak credentials into spawned servers now that they parse the
-    client dotenv files at startup.
+    ``CODEX_HOME`` points at ``os.devnull`` -- never a directory -- so a
+    developer's real ``~/.codex/.env`` cannot leak credentials into spawned
+    servers now that they parse the Codex dotenv file at startup.
     """
     keys = ("PATH", "HOME", "TMPDIR", "LANG", "LC_ALL", "SYSTEMROOT")
     env = {key: os.environ[key] for key in keys if key in os.environ}
@@ -81,6 +81,23 @@ def _default_env() -> dict[str, str]:
 def _dummy_key_env() -> dict[str, str]:
     """Return a minimal env with a dummy AI Studio key so config load succeeds."""
     return {**_clean_env(), "GEMINI_API_KEY": "dummy"}
+
+
+_API_KEY_ENV_VARS = (
+    "MCP_GEMINI_GOOGLE_API_KEY",
+    "MCP_GEMINI_GEMINI_API_KEY",
+    "GOOGLE_API_KEY",
+    "GEMINI_API_KEY",
+)
+
+
+def _live_api_key() -> str:
+    """Select the live-test API key with the server's namespace-first precedence."""
+    for name in _API_KEY_ENV_VARS:
+        value = os.environ.get(name, "").strip()
+        if value:
+            return value
+    return ""
 
 
 async def _spawn(args: list[str], env: dict[str, str]) -> asyncio.subprocess.Process:
@@ -212,14 +229,39 @@ async def test_missing_api_key_exits_one_with_config_error() -> None:
     assert stdout == b""
 
 
+@pytest.mark.parametrize(
+    "key_name",
+    ["GEMINI_API_KEY", "MCP_GEMINI_GEMINI_API_KEY"],
+    ids=["unprefixed key", "prefixed key"],
+)
+async def test_stdio_handshake_with_dotenv_only_key(
+    key_name: str,
+    tmp_path: Path,
+) -> None:
+    """A key available only through the Codex dotenv file is enough to start the installed binary."""
+    home = tmp_path / "codex-home"
+    home.mkdir()
+    (home / ".env").write_text(f'{key_name}="dummy"\n', encoding="utf-8")
+    params = StdioServerParameters(
+        command=str(BINARY),
+        env={**_clean_env(), "CODEX_HOME": str(home)},
+    )
+    with anyio.fail_after(_SUBPROCESS_TIMEOUT):
+        async with stdio_client(params) as (read, write):
+            async with ClientSession(read, write) as session:
+                init = await session.initialize()
+
+    assert init.server_info.version == __version__
+
+
 @pytest.mark.live
 @pytest.mark.skipif(
-    not os.environ.get("RUN_LIVE_API") or not (os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")),
-    reason="RUN_LIVE_API and a real GEMINI_API_KEY/GOOGLE_API_KEY are required",
+    not os.environ.get("RUN_LIVE_API") or not _live_api_key(),
+    reason="RUN_LIVE_API and a real API key (GEMINI_API_KEY/GOOGLE_API_KEY or an MCP_GEMINI_-prefixed variant) are required",
 )
 async def test_live_google_search_returns_grounded_text() -> None:
     """A real API call returns grounded text with a source list."""
-    api_key = os.environ.get("GEMINI_API_KEY") or os.environ["GOOGLE_API_KEY"]
+    api_key = _live_api_key()
     params = StdioServerParameters(
         command=str(BINARY),
         env={**_default_env(), "GEMINI_API_KEY": api_key},
@@ -240,14 +282,14 @@ async def test_live_google_search_returns_grounded_text() -> None:
 
 @pytest.mark.live
 @pytest.mark.skipif(
-    not os.environ.get("RUN_LIVE_API") or not (os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")),
-    reason="RUN_LIVE_API and a real GEMINI_API_KEY/GOOGLE_API_KEY are required",
+    not os.environ.get("RUN_LIVE_API") or not _live_api_key(),
+    reason="RUN_LIVE_API and a real API key (GEMINI_API_KEY/GOOGLE_API_KEY or an MCP_GEMINI_-prefixed variant) are required",
 )
 async def test_live_deep_research_start_and_poll_then_cancel() -> None:
     """Start a deep research run, poll once, then cancel the billed background job."""
     from google import genai
 
-    api_key = os.environ.get("GEMINI_API_KEY") or os.environ["GOOGLE_API_KEY"]
+    api_key = _live_api_key()
     params = StdioServerParameters(
         command=str(BINARY),
         env={**_default_env(), "GEMINI_API_KEY": api_key},
@@ -286,12 +328,12 @@ async def test_live_deep_research_start_and_poll_then_cancel() -> None:
     reason="set RUN_SLOW=1 to run the full multi-minute deep research live test",
 )
 @pytest.mark.skipif(
-    not os.environ.get("RUN_LIVE_API") or not (os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")),
-    reason="RUN_LIVE_API and a real GEMINI_API_KEY/GOOGLE_API_KEY are required",
+    not os.environ.get("RUN_LIVE_API") or not _live_api_key(),
+    reason="RUN_LIVE_API and a real API key (GEMINI_API_KEY/GOOGLE_API_KEY or an MCP_GEMINI_-prefixed variant) are required",
 )
 async def test_live_deep_research_full_run_to_completion() -> None:
     """Gated by RUN_SLOW=1 in addition to the live marker so `-m live` alone never runs this multi-minute billed job."""
-    api_key = os.environ.get("GEMINI_API_KEY") or os.environ["GOOGLE_API_KEY"]
+    api_key = _live_api_key()
     params = StdioServerParameters(
         command=str(BINARY),
         env={**_default_env(), "GEMINI_API_KEY": api_key},

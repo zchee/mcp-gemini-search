@@ -25,7 +25,6 @@ import pytest
 from mcp_gemini_search import cli
 from mcp_gemini_search.config import (
     DEFAULT_DEEP_RESEARCH_AGENT,
-    ENV_CLAUDE_HOME,
     ENV_CODEX_HOME,
     ENV_GEMINI_API_KEY,
     ENV_GEMINI_DEEP_RESEARCH_AGENT,
@@ -53,6 +52,7 @@ def test_backend_options_enable_uvloop() -> None:
 )
 def test_run_wires_deep_research_service_agent(
     monkeypatch: pytest.MonkeyPatch,
+    isolated_environ: None,
     agent: str,
     want_agent: str,
 ) -> None:
@@ -101,22 +101,15 @@ def test_run_wires_deep_research_service_agent(
     assert "backend_options" in kwargs
 
 
-@pytest.mark.parametrize(
-    ("home_env", "label"),
-    [(ENV_CODEX_HOME, "codex"), (ENV_CLAUDE_HOME, "claude")],
-    ids=["codex", "claude"],
-)
 def test_run_loads_client_dotenv_key(
-    home_env: str,
-    label: str,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     isolated_environ: None,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """A GEMINI_API_KEY stored only in a client dotenv is enough to start the server."""
+    """A GEMINI_API_KEY stored only in the Codex dotenv is enough to start the server."""
     (tmp_path / ".env").write_text(f'{ENV_GEMINI_API_KEY}="dotenv-key"\n', encoding="utf-8")
-    monkeypatch.setenv(home_env, str(tmp_path))
+    monkeypatch.setenv(ENV_CODEX_HOME, str(tmp_path))
     for key in (
         ENV_GOOGLE_API_KEY,
         ENV_GEMINI_API_KEY,
@@ -130,4 +123,5 @@ def test_run_loads_client_dotenv_key(
     with caplog.at_level(logging.INFO, logger="mcp_gemini_search"):
         cli._run("")
 
-    assert f"parsed {label} dotenv" in caplog.text
+    assert "parsed codex dotenv" in caplog.text
+    assert "dotenv-key" not in caplog.text
