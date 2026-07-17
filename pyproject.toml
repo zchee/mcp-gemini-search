@@ -46,7 +46,7 @@ mcp-gemini-search = "mcp_gemini_search.cli:main"
 dev = ["pytest", "anyio", "pytest-benchmark", "ruff", "ty"]
 
 [tool.uv]
-prerelease = "if-necessary-or-explicit"
+prerelease = "allow"
 
 [tool.ruff]
 preview = true
