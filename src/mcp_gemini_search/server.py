@@ -33,6 +33,7 @@ from mcp_types import (
 )
 
 from mcp_gemini_search import __version__
+from mcp_gemini_search._logging import logger
 from mcp_gemini_search.research import (
     DEEP_RESEARCH_AGENT,
     DEEP_RESEARCH_MAX_AGENT,
@@ -405,6 +406,7 @@ async def _call_tool(
             is_error=False,
         )
     except Exception as e:
+        logger.warning("tool %s failed: %s", name, e)
         return CallToolResult(
             content=[TextContent(type="text", text=str(e))],
             is_error=True,

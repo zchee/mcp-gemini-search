@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any
@@ -269,6 +270,23 @@ async def test_call_tool_empty_query_returns_is_error() -> None:
     block = result.content[0]
     assert isinstance(block, TextContent)
     assert block.text == "search query cannot be empty"
+
+
+async def test_call_tool_failure_logs_warning(caplog: pytest.LogCaptureFixture) -> None:
+    """A failing tool call logs a warning naming the tool before returning isError."""
+    client = genai.Client(api_key="dummy")
+    service = GoogleSearchService(model=DEFAULT_MODEL, interactions=client.aio.interactions)
+    async with _client(service) as mcp_client:
+        with caplog.at_level(logging.WARNING, logger="mcp_gemini_search"):
+            result = await mcp_client.call_tool("google_search", {"query": "  "})
+
+    assert result.is_error
+    assert any(
+        rec.levelno == logging.WARNING
+        and "google_search" in rec.message
+        and "search query cannot be empty" in rec.message
+        for rec in caplog.records
+    )
 
 
 async def test_call_tool_unknown_name_returns_is_error() -> None:
