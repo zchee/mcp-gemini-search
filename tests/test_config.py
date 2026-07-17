@@ -36,6 +36,7 @@ from mcp_gemini_search.config import (
     ENV_GOOGLE_CLOUD_LOCATION,
     ENV_GOOGLE_CLOUD_PROJECT,
     ENV_GOOGLE_GENAI_USE_VERTEXAI,
+    ENV_PREFIX,
     ServerConfig,
     _first_non_empty,
     _is_enabled,
@@ -186,6 +187,72 @@ from mcp_gemini_search.config import (
                 service_tier="priority",
             ),
         ),
+        (
+            {
+                ENV_PREFIX + ENV_GEMINI_API_KEY: "prefixed-key",
+                ENV_PREFIX + ENV_GEMINI_MODEL: "gemini-2.0-flash",
+            },
+            ServerConfig(model="gemini-2.0-flash", api_key="prefixed-key"),
+        ),
+        (
+            {
+                ENV_GOOGLE_API_KEY: "google-key",
+                ENV_GEMINI_MODEL: "base-model",
+                ENV_PREFIX + ENV_GEMINI_MODEL: "prefixed-model",
+            },
+            ServerConfig(model="prefixed-model", api_key="google-key"),
+        ),
+        (
+            {
+                ENV_GOOGLE_API_KEY: "google-key",
+                ENV_PREFIX + ENV_GEMINI_API_KEY: "prefixed-key",
+            },
+            ServerConfig(model=DEFAULT_MODEL, api_key="prefixed-key"),
+        ),
+        (
+            {
+                ENV_PREFIX + ENV_GOOGLE_API_KEY: "prefixed-google-key",
+                ENV_PREFIX + ENV_GEMINI_API_KEY: "prefixed-gemini-key",
+            },
+            ServerConfig(model=DEFAULT_MODEL, api_key="prefixed-google-key"),
+        ),
+        (
+            {
+                ENV_GOOGLE_API_KEY: "google-key",
+                ENV_GEMINI_MODEL: "gemini-2.0-flash",
+                ENV_PREFIX + ENV_GEMINI_MODEL: "   ",
+            },
+            ServerConfig(model="gemini-2.0-flash", api_key="google-key"),
+        ),
+        (
+            {
+                ENV_GOOGLE_API_KEY: "google-key",
+                ENV_GOOGLE_GENAI_USE_VERTEXAI: "true",
+                ENV_PREFIX + ENV_GOOGLE_GENAI_USE_VERTEXAI: "0",
+            },
+            ServerConfig(model=DEFAULT_MODEL, api_key="google-key"),
+        ),
+        (
+            {
+                ENV_PREFIX + ENV_GOOGLE_GENAI_USE_VERTEXAI: "true",
+                ENV_PREFIX + ENV_GOOGLE_CLOUD_PROJECT: "prefixed-project",
+                ENV_PREFIX + ENV_GOOGLE_CLOUD_LOCATION: "asia-northeast1",
+            },
+            ServerConfig(
+                model=DEFAULT_MODEL,
+                vertexai=True,
+                project="prefixed-project",
+                location="asia-northeast1",
+            ),
+        ),
+        (
+            {
+                ENV_GOOGLE_API_KEY: "google-key",
+                ENV_GEMINI_SERVICE_TIER: "standard",
+                ENV_PREFIX + ENV_GEMINI_SERVICE_TIER: "priority",
+            },
+            ServerConfig(model=DEFAULT_MODEL, api_key="google-key", service_tier="priority"),
+        ),
     ],
     ids=[
         "google api key",
@@ -202,6 +269,14 @@ from mcp_gemini_search.config import (
         "service tier priority",
         "service tier whitespace and case normalized",
         "vertex service tier priority",
+        "prefixed-only configuration",
+        "prefixed model overrides base model",
+        "prefixed gemini key beats unprefixed google key",
+        "prefixed google key beats prefixed gemini key",
+        "blank prefixed value falls back to base",
+        "prefixed falsy vertex switch overrides base truthy",
+        "prefixed vertex configuration",
+        "prefixed service tier overrides base",
     ],
 )
 def test_load_config_from_env(env: dict[str, str], want: ServerConfig) -> None:
@@ -228,8 +303,22 @@ def test_load_config_from_env(env: dict[str, str], want: ServerConfig) -> None:
             {ENV_GOOGLE_API_KEY: "test-key", ENV_GEMINI_SERVICE_TIER: "turbo"},
             '"GEMINI_SERVICE_TIER" must be one of "flex", "standard", "priority" (or unset); got \'turbo\'',
         ),
+        (
+            {ENV_GOOGLE_API_KEY: "test-key", ENV_PREFIX + ENV_GEMINI_SERVICE_TIER: "turbo"},
+            '"MCP_GEMINI_GEMINI_SERVICE_TIER" must be one of "flex", "standard", "priority" (or unset); got \'turbo\'',
+        ),
+        (
+            {ENV_PREFIX + ENV_GOOGLE_GENAI_USE_VERTEXAI: "true"},
+            '"GOOGLE_CLOUD_PROJECT" environment variable is required when using Google Vertex AI',
+        ),
     ],
-    ids=["missing api key", "missing vertex project", "invalid service tier"],
+    ids=[
+        "missing api key",
+        "missing vertex project",
+        "invalid service tier",
+        "invalid prefixed service tier names prefixed variable",
+        "prefixed vertex switch missing project",
+    ],
 )
 def test_load_config_from_env_errors(env: dict[str, str], want_err: str) -> None:
     """Missing required variables raise ValueError with the Go-identical message."""
@@ -358,6 +447,29 @@ def test_load_client_env_defaults_to_home_dir(
         monkeypatch.delenv(home_env, raising=False)
     else:
         monkeypatch.setenv(home_env, home_value)
+    monkeypatch.delenv(_CLIENT_TEST_VAR, raising=False)
+
+    assert loader() == env_file
+    assert os.environ[_CLIENT_TEST_VAR] == "from-dotenv"
+
+
+@pytest.mark.parametrize(
+    ("home_env", "loader"),
+    [(ENV_CODEX_HOME, load_codex_env), (ENV_CLAUDE_HOME, load_claude_env)],
+    ids=["codex", "claude"],
+)
+def test_load_client_env_prefixed_home_overrides_base(
+    home_env: str,
+    loader: Callable[[], Path | None],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_environ: None,
+) -> None:
+    """MCP_GEMINI_-prefixed home variables win over the client's own home variable."""
+    env_file = _write_client_env(tmp_path / "prefixed")
+    _write_client_env(tmp_path / "base")
+    monkeypatch.setenv(ENV_PREFIX + home_env, str(tmp_path / "prefixed"))
+    monkeypatch.setenv(home_env, str(tmp_path / "base"))
     monkeypatch.delenv(_CLIENT_TEST_VAR, raising=False)
 
     assert loader() == env_file

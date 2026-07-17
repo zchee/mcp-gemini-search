@@ -137,6 +137,8 @@ At startup the server parses `$CODEX_HOME/.env` — `~/.codex/.env` when `CODEX_
 | `CODEX_HOME`                   | `~/.codex`                      | Dotenv directory parsed at startup; exported variables win.   |
 | `CLAUDE_HOME`                  | `~/.claude`                     | Second dotenv directory parsed at startup after `CODEX_HOME`. |
 
+Every variable above is also recognized with an `MCP_GEMINI_` prefix — for example `MCP_GEMINI_GEMINI_API_KEY` or `MCP_GEMINI_GEMINI_MODEL`. A non-blank prefixed variable takes precedence over its unprefixed name, so this server can be configured independently of other tools that read the shared names. For the API keys, both prefixed keys take precedence over both unprefixed ones: `MCP_GEMINI_GOOGLE_API_KEY` > `MCP_GEMINI_GEMINI_API_KEY` > `GOOGLE_API_KEY` > `GEMINI_API_KEY`.
+
 ### Optional built-in tools
 
 The Gemini `url_context` and `code_execution` built-in tools can be enabled alongside Google Search grounding. The environment variables below set the server-wide defaults, which individual `google_search` requests can override for one call. Both defaults are disabled when the variables are unset:

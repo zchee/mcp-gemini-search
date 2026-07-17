@@ -27,6 +27,8 @@ from google import genai
 from mcp_gemini_search._logging import logger
 from mcp_gemini_search.research import DEEP_RESEARCH_AGENT as DEFAULT_DEEP_RESEARCH_AGENT
 
+ENV_PREFIX = "MCP_GEMINI_"
+
 ENV_GEMINI_MODEL = "GEMINI_MODEL"
 ENV_GOOGLE_API_KEY = "GOOGLE_API_KEY"
 ENV_GEMINI_API_KEY = "GEMINI_API_KEY"
@@ -74,21 +76,35 @@ def load_config_from_env(getenv: Callable[[str], str | None]) -> ServerConfig:
     """Resolve the server configuration from environment variable lookups.
 
     ``getenv`` may return ``None`` for missing keys (``os.getenv`` style);
-    missing values are treated as empty strings.
+    missing values are treated as empty strings. Every variable is also
+    recognized under the ``MCP_GEMINI_`` prefix (e.g. ``MCP_GEMINI_GEMINI_MODEL``),
+    and a non-blank prefixed value wins over the unprefixed name so this server
+    can be configured independently of tools sharing the generic variables. For
+    the API key pair, both prefixed keys win over both unprefixed keys.
     """
 
-    def lookup(key: str) -> str:
+    def raw(key: str) -> str:
         return getenv(key) or ""
+
+    def resolve(key: str) -> tuple[str, str]:
+        prefixed_key = ENV_PREFIX + key
+        prefixed = raw(prefixed_key)
+        if prefixed.strip():
+            return prefixed_key, prefixed
+        return key, raw(key)
+
+    def lookup(key: str) -> str:
+        return resolve(key)[1]
 
     model = lookup(ENV_GEMINI_MODEL).strip() or DEFAULT_MODEL
     url_context = _is_enabled(lookup(ENV_GEMINI_ENABLE_URL_CONTEXT))
     code_execution = _is_enabled(lookup(ENV_GEMINI_ENABLE_CODE_EXECUTION))
     deep_research_agent = lookup(ENV_GEMINI_DEEP_RESEARCH_AGENT).strip() or DEFAULT_DEEP_RESEARCH_AGENT
-    raw_service_tier = lookup(ENV_GEMINI_SERVICE_TIER)
+    service_tier_var, raw_service_tier = resolve(ENV_GEMINI_SERVICE_TIER)
     service_tier = raw_service_tier.strip().lower()
     if service_tier and service_tier not in _SERVICE_TIERS:
         allowed = ", ".join(f'"{tier}"' for tier in _SERVICE_TIERS)
-        raise ValueError(f'"{ENV_GEMINI_SERVICE_TIER}" must be one of {allowed} (or unset); got {raw_service_tier!r}')
+        raise ValueError(f'"{service_tier_var}" must be one of {allowed} (or unset); got {raw_service_tier!r}')
 
     if _is_enabled(lookup(ENV_GOOGLE_GENAI_USE_VERTEXAI)):
         project = lookup(ENV_GOOGLE_CLOUD_PROJECT)
@@ -109,8 +125,10 @@ def load_config_from_env(getenv: Callable[[str], str | None]) -> ServerConfig:
         )
 
     api_key = _first_non_empty(
-        lookup(ENV_GOOGLE_API_KEY),
-        lookup(ENV_GEMINI_API_KEY),
+        raw(ENV_PREFIX + ENV_GOOGLE_API_KEY),
+        raw(ENV_PREFIX + ENV_GEMINI_API_KEY),
+        raw(ENV_GOOGLE_API_KEY),
+        raw(ENV_GEMINI_API_KEY),
     )
     if not api_key:
         raise ValueError(
@@ -157,10 +175,14 @@ def load_claude_env() -> Path | None:
 
 
 def _load_home_env(env_var: str, default_dirname: str) -> Path | None:
-    """Parse ``$<env_var>/.env`` (``~/<default_dirname>/.env`` fallback) into os.environ."""
+    """Parse ``$<env_var>/.env`` (``~/<default_dirname>/.env`` fallback) into os.environ.
+
+    ``MCP_GEMINI_<env_var>`` overrides ``<env_var>`` so the server's dotenv
+    directory can be relocated without moving the client's own home.
+    """
     label = default_dirname.removeprefix(".")
     try:
-        home = os.getenv(env_var) or ""
+        home = os.getenv(ENV_PREFIX + env_var) or os.getenv(env_var) or ""
         base = Path(home).expanduser() if home else Path.home() / default_dirname
     except RuntimeError as e:
         logger.warning("skip %s dotenv: cannot resolve home directory: %s", label, e)
